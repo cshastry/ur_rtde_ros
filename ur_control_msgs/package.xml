@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="2">
+    <name>ur_control_msgs</name>
+    <version>0.1.0</version>
+    <description>The ur_control_msgs package</description>
+    <maintainer email="kils@mmmi.sdu.dk">Kim Lindberg Schwaner</maintainer>
+    <license>BSD</license>
+    <!-- <url type="website"></url> -->
+
+    <buildtool_depend>catkin</buildtool_depend>
+
+    <build_depend>message_generation</build_depend>
+    <build_export_depend>message_runtime</build_export_depend>
+    <exec_depend>message_runtime</exec_depend>
+
+    <!-- <depend>actionlib</depend> -->
+    <depend>std_msgs</depend>
+    <depend>geometry_msgs</depend>
+</package>
