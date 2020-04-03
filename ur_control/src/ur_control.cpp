@@ -36,8 +36,8 @@ auto convert(const Eigen::Quaterniond& q)
 auto convert(const std::vector<double>& pose)
 {
     assert(pose.size() == 6);
-    Eigen::Vector3d p(pose[0], pose[1], pose[2]);
-    Eigen::Vector3d r(pose[3], pose[4], pose[5]);
+    Eigen::Vector3d p(pose[0], pose[1], pose[2]); // position
+    Eigen::Vector3d r(pose[3], pose[4], pose[5]); // rotation
     Eigen::Quaterniond q(Eigen::AngleAxisd(r.norm(), r.normalized()));
     return std::make_tuple(convert(p), convert(q));
 }
@@ -111,7 +111,7 @@ int main(int argc, char* argv[])
 {
     using namespace std::string_literals;
 
-    ros::init(argc, argv, "ur_rtde");
+    ros::init(argc, argv, "ur_control");
     ros::NodeHandle nh;
     ros::NodeHandle nh_priv("~");
     ros::NodeHandle nh_servo;
@@ -136,13 +136,20 @@ int main(int argc, char* argv[])
     auto pub_tcp_pose = (publish_tcp_pose) ? nh.advertise<geometry_msgs::PoseStamped>("tcp_pose", 1) : ros::Publisher();
 
     std::thread servo_thread([&] {
+        bool servoing = false;
+
         while (nh_servo.ok()) {
             auto ret = servo_queue.callOne(ros::WallDuration(0.1));
 
-            // Stop servoing if there are no more servo commands in the queue
-            // after the timeout
-            if (ret == ros::CallbackQueue::Empty)
+            if ((ret == ros::CallbackQueue::Called) && !servoing) {
+                // If a callback got called the robot is now servoing
+                servoing = true;
+            } else if ((ret == ros::CallbackQueue::Empty) && servoing) {
+                // Stop servoing if there are no more servo commands left in
+                // the queue after timing out
                 ur_controller.servoStop();
+                servoing = false;
+            }
         }
 
         ur_controller.servoStop();
