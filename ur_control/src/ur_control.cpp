@@ -121,11 +121,7 @@ public:
 
     ~Controller()
     {
-        if (servo_thread_.joinable()) {
-            currently_servoing_ = false;
-            servo_thread_.join();
-        }
-
+        servoStop();
         rtde_ctrl_.stopRobot();
     }
 
