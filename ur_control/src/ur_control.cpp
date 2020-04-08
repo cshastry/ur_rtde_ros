@@ -69,12 +69,12 @@ public:
         , base_frame_(prefix + base_frame)
     {
         static const std::vector<std::string> base_joint_names{
-            "shoulder_pan_joint",
-            "shoulder_lift_joint",
+            "base_joint",
+            "shoulder_joint",
             "elbow_joint",
-            "wrist_1_joint",
-            "wrist_2_joint",
-            "wrist_3_joint",
+            "wrist1_joint",
+            "wrist2_joint",
+            "wrist3_joint",
         };
 
         for (const auto& n : base_joint_names)
@@ -236,10 +236,10 @@ private:
     std::chrono::duration<double> step_time_;
     std::atomic<bool> currently_servoing_;
     std::atomic<bool> servo_loop_stopped_;
-    std::thread servo_thread_;
     std::condition_variable servo_cv_;
     std::mutex servo_mutex_;
     std::queue<ur_control_msgs::ServoJoint> servo_queue_;
+    std::thread servo_thread_;
 };
 
 int main(int argc, char* argv[])
@@ -252,14 +252,14 @@ int main(int argc, char* argv[])
 
     auto publish_tcp_pose = nh_priv.param("publish_tcp_pose", false);
     auto prefix = nh_priv.param("prefix", ""s);
-    auto robot_ip = nh_priv.param("robot_ip", ""s);
+    auto hostname = nh_priv.param("hostname", ""s);
     auto port = nh_priv.param("port", 30004);
 
-    if (robot_ip.empty())
-        throw std::runtime_error("The ~robot_ip parameter is unset");
+    if (hostname.empty())
+        throw std::runtime_error("The ~hostname parameter is not set");
 
-    Receiver receiver("base", prefix, robot_ip, port);
-    Controller controller(robot_ip, port);
+    Receiver receiver("base", prefix, hostname, port);
+    Controller controller(hostname, port);
 
     auto pub_joint_state = nh.advertise<sensor_msgs::JointState>("joint_state", 1);
     auto pub_tcp_pose = (publish_tcp_pose) ? nh.advertise<geometry_msgs::PoseStamped>("tcp_pose_current", 1) : ros::Publisher();
