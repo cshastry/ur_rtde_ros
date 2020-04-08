@@ -110,136 +110,164 @@ private:
 
 class Controller
 {
+    enum State
+    {
+        IDLE,
+        MOVING,
+        SERVOING,
+    };
+
 public:
     explicit Controller(std::string hostname, int port = 30004)
         : rtde_ctrl_(std::move(hostname), port)
         , step_time_(rtde_ctrl_.getStepTime())
-        , currently_servoing_(false)
-        , servo_loop_stopped_(true)
+        , servo_timeout_duration_(10 * step_time_)
+        , state_(IDLE)
+        , cmd_proc_stopped_(true)
     {
     }
 
     ~Controller()
     {
-        servoStop();
+        stop();
         rtde_ctrl_.stopRobot();
     }
 
-    void moveJ(const ur_control_msgs::MoveJoint& m)
+    void start()
     {
-        if (currently_servoing_) {
-            ROS_WARN("Discarding MoveJ command - currently servoing");
+        if (thread_.joinable()) {
+            ROS_WARN("Servo loop already running?");
             return;
         }
 
-        double speed = (m.speed != 0.0) ? m.speed : 1.05;
-        double acceleration = (m.acceleration != 0.0) ? m.acceleration : 1.4;
-        rtde_ctrl_.moveJ(m.position, speed, acceleration);
+        cmd_proc_stopped_ = false;
+        thread_ = std::thread([this]() { processCommands(); });
     }
 
-    void moveL(const ur_control_msgs::MovePose& m)
+    void stop()
     {
-        if (currently_servoing_) {
-            ROS_WARN("Discarding MoveL command - currently servoing");
-            return;
-        }
+        cmd_proc_stopped_ = true;
 
-        double speed = (m.speed != 0.0) ? m.speed : 0.25;
-        double acceleration = (m.acceleration != 0.0) ? m.acceleration : 1.2;
-        rtde_ctrl_.moveL(convert(m.pose), speed, acceleration);
+        if (thread_.joinable())
+            thread_.join();
     }
 
-    void servoJ(const ur_control_msgs::ServoJoint& m)
-    {
-        // Put a servo command in the queue
-        {
-            std::lock_guard<std::mutex> lock(servo_mutex_);
-            servo_queue_.push(m);
-        }
-
-        servo_cv_.notify_one();
-    }
-
-    void servoStop()
-    {
-        servo_loop_stopped_ = true;
-
-        if (servo_thread_.joinable())
-            servo_thread_.join();
-    }
-
-    void servoStart()
-    {
-        if (servo_thread_.joinable()) {
-            ROS_WARN("Servo loop already running");
-            return;
-        }
-
-        servo_loop_stopped_ = false;
-        servo_thread_ = std::thread([this]() { servoLoop(); });
-    }
-
-    double getStepTime() const
+    double stepTime() const
     {
         return step_time_.count();
     }
 
-private:
-    void servoLoop()
+    void moveJ(const ur_control_msgs::MoveJoint& m)
     {
-        ros::WallRate rate(1.0 / step_time_.count());
+        if (state_ == SERVOING) {
+            ROS_WARN("Discarding MoveJ command - currently servoing");
+            return;
+        }
 
+        enqueueCommand([this, m]() {
+            double speed = (m.speed != 0.0) ? m.speed : 1.05;
+            double acceleration = (m.acceleration != 0.0) ? m.acceleration : 1.4;
+            state_ = MOVING;
+            rtde_ctrl_.moveJ(m.position, speed, acceleration); // blocks until robot is done moving
+            state_ = IDLE;
+        });
+    }
+
+    void moveL(const ur_control_msgs::MovePose& m)
+    {
+        if (state_ == SERVOING) {
+            ROS_WARN("Discarding MoveL command - currently servoing");
+            return;
+        }
+
+        enqueueCommand([this, m]() {
+            double speed = (m.speed != 0.0) ? m.speed : 0.25;
+            double acceleration = (m.acceleration != 0.0) ? m.acceleration : 1.2;
+            state_ = MOVING;
+            rtde_ctrl_.moveL(convert(m.pose), speed, acceleration); // blocks until robot is done moving
+            state_ = IDLE;
+        });
+    }
+
+    void servoJ(const ur_control_msgs::ServoJoint& m)
+    {
+        if (state_ == MOVING) {
+            ROS_WARN("Discarding servoJ command - currently moving");
+            return;
+        }
+
+        enqueueCommand([this, m]() {
+            double lookahead_time = (m.lookahead_time != 0.0) ? m.lookahead_time : 0.1;
+            double gain = (m.gain != 0.0) ? m.gain : 300;
+
+            if (state_ != SERVOING)
+                ROS_INFO("SERVOING STARTING");
+
+            state_ = SERVOING; // will be cleared if we don't keep receiving servo commands
+            auto t = std::chrono::steady_clock::now() + step_time_;
+            rtde_ctrl_.servoJ(m.position, 0.0, 0.0, step_time_.count(), lookahead_time, gain); // not blocking
+            std::this_thread::sleep_until(t);
+        });
+    }
+
+private:
+    template <typename Callable>
+    void enqueueCommand(Callable&& f)
+    {
+        {
+            std::lock_guard<std::mutex> lock(cmd_queue_mtx_);
+            cmd_queue_.emplace(std::forward<Callable>(f));
+        }
+
+        cmd_cv_.notify_one();
+    }
+
+    void processCommands()
+    {
         // Process servo commands from the queue
-        while (!servo_loop_stopped_) {
-            std::unique_lock<std::mutex> lock(servo_mutex_);
+        while (!cmd_proc_stopped_) {
+            std::unique_lock<std::mutex> lock(cmd_queue_mtx_);
 
-            // Wait for queue to be non-empty or stop, time out after N cycles
-            bool timeout = !servo_cv_.wait_for(lock,
-                                               20 * step_time_,
-                                               [this]() { return !servo_queue_.empty() || servo_loop_stopped_; });
+            // Wait for queue to be non-empty or stop, but time out after given
+            bool timeout = !cmd_cv_.wait_for(lock,
+                                             servo_timeout_duration_,
+                                             [this]() { return !cmd_queue_.empty() || cmd_proc_stopped_; });
 
-            if (servo_loop_stopped_)
+            if (cmd_proc_stopped_)
                 break;
 
             if (timeout) {
-                if (currently_servoing_) {
+                // Clear SERVOING state after timeout (ie. no new servo messages
+                // were received after an interval of servo_timeout_duration_)
+                if (state_ == SERVOING) {
                     rtde_ctrl_.servoStop();
-                    currently_servoing_ = false;
-                    ROS_DEBUG("Servo mode STOP");
+                    state_ = IDLE;
+                    ROS_INFO("SERVOING STOPPED");
                 }
             } else {
-                auto m = std::move(servo_queue_.front());
-                servo_queue_.pop();
-                lock.unlock(); // unlock before the servoJ/sleep calls
-
-                if (!currently_servoing_) {
-                    ROS_DEBUG("Servo mode START");
-                    currently_servoing_ = true;
-                    rate.reset();
-                }
-
-                double lookahead_time = (m.lookahead_time != 0.0) ? m.lookahead_time : 0.1;
-                double gain = (m.gain != 0.0) ? m.gain : 300;
-                rtde_ctrl_.servoJ(m.position, 0.0, 0.0, step_time_.count(), lookahead_time, gain);
-
-                if (!rate.sleep())
-                    ROS_WARN("Servo loop rate not met");
+                auto cmd = std::move(cmd_queue_.front());
+                cmd_queue_.pop();
+                lock.unlock(); // unlock before the executing command
+                cmd();
             }
         }
 
-        if (currently_servoing_)
+        if (state_ == SERVOING)
             rtde_ctrl_.servoStop();
+
+        state_ = IDLE;
     }
 
 private:
     ur_rtde::RTDEControlInterface rtde_ctrl_;
     std::chrono::duration<double> step_time_;
-    std::atomic<bool> currently_servoing_;
-    std::atomic<bool> servo_loop_stopped_;
-    std::condition_variable servo_cv_;
-    std::mutex servo_mutex_;
-    std::queue<ur_control_msgs::ServoJoint> servo_queue_;
-    std::thread servo_thread_;
+    std::chrono::duration<double> servo_timeout_duration_;
+    std::atomic<State> state_;
+    std::atomic<bool> cmd_proc_stopped_;
+    std::condition_variable cmd_cv_;
+    std::mutex cmd_queue_mtx_;
+    std::queue<std::function<void()>> cmd_queue_;
+    std::thread thread_;
 };
 
 int main(int argc, char* argv[])
@@ -271,7 +299,7 @@ int main(int argc, char* argv[])
     };
 
     // Schedule timer to publish robot state
-    auto timer = nh.createWallTimer(ros::WallDuration(controller.getStepTime()),
+    auto timer = nh.createWallTimer(ros::WallDuration(controller.stepTime()),
                                     [&](const auto&) {
                                         pub_joint_state.publish(receiver.getJointStateMsg());
 
@@ -279,9 +307,9 @@ int main(int argc, char* argv[])
                                             pub_tcp_pose.publish(receiver.getActualTCPPoseStampedMsg());
                                     });
 
-    controller.servoStart();
-
+    controller.start();
     ros::spin();
+    controller.stop();
 
     return EXIT_SUCCESS;
 }
