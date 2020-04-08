@@ -261,12 +261,12 @@ int main(int argc, char* argv[])
     Receiver receiver("base", prefix, hostname, port);
     Controller controller(hostname, port);
 
-    auto pub_joint_state = nh.advertise<sensor_msgs::JointState>("joint_state", 1);
+    auto pub_joint_state = nh.advertise<sensor_msgs::JointState>("joint_states", 1);
     auto pub_tcp_pose = (publish_tcp_pose) ? nh.advertise<geometry_msgs::PoseStamped>("tcp_pose_current", 1) : ros::Publisher();
 
     std::list<ros::Subscriber> subscribers{
-        nh.subscribe("move_j", 1, &Controller::moveJ, &controller, ros::TransportHints().tcpNoDelay()),
-        nh.subscribe("move_l", 1, &Controller::moveL, &controller, ros::TransportHints().tcpNoDelay()),
+        nh.subscribe("move_j", 10, &Controller::moveJ, &controller, ros::TransportHints().tcpNoDelay()),
+        nh.subscribe("move_l", 10, &Controller::moveL, &controller, ros::TransportHints().tcpNoDelay()),
         nh.subscribe("servo_j", 10, &Controller::servoJ, &controller, ros::TransportHints().tcpNoDelay()),
     };
 
