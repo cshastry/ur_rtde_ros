@@ -1,3 +1,5 @@
+﻿#include "monotonic.h"
+
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <sensor_msgs/JointState.h>
@@ -17,6 +19,8 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+
+using namespace std::chrono_literals;
 
 auto convert(const Eigen::Vector3d& v)
 {
@@ -65,7 +69,7 @@ public:
                       std::string prefix,
                       std::string hostname,
                       int port = 30004)
-        : rtde_recv_(std::move(hostname), {"actual_q", "actual_qd", "actual_TCP_pose"}, port)
+        : rtde_recv_(hostname, {"actual_q", "actual_qd", "actual_TCP_pose"}, port)
         , base_frame_(prefix + base_frame)
     {
         static const std::vector<std::string> base_joint_names{
@@ -119,11 +123,12 @@ class Controller
 
 public:
     explicit Controller(std::string hostname, int port = 30004)
-        : rtde_ctrl_(std::move(hostname), port)
+        : rtde_ctrl_(hostname, port)
         , step_time_(rtde_ctrl_.getStepTime())
-        , servo_timeout_duration_(10 * step_time_)
+        , servo_timeout_duration_(100ms)
         , state_(IDLE)
         , cmd_proc_stopped_(true)
+        , rate_(step_time_)
     {
     }
 
@@ -157,56 +162,71 @@ public:
         return step_time_.count();
     }
 
-    void moveJ(const ur_control_msgs::MoveJoint& m)
+    void moveJ(ur_control_msgs::MoveJoint m)
     {
         if (state_ == SERVOING) {
             ROS_WARN("Discarding MoveJ command - currently servoing");
             return;
         }
 
-        enqueueCommand([this, m]() {
+        enqueueCommand([this, m = std::move(m)]() {
             double speed = (m.speed != 0.0) ? m.speed : 1.05;
             double acceleration = (m.acceleration != 0.0) ? m.acceleration : 1.4;
             state_ = MOVING;
-            rtde_ctrl_.moveJ(m.position, speed, acceleration); // blocks until robot is done moving
+
+            // blocks until robot is done moving
+            if (!rtde_ctrl_.moveJ(m.position, speed, acceleration))
+                ROS_WARN("moveJ command failed");
+
             state_ = IDLE;
         });
     }
 
-    void moveL(const ur_control_msgs::MovePose& m)
+    void moveL(ur_control_msgs::MovePose m)
     {
         if (state_ == SERVOING) {
             ROS_WARN("Discarding MoveL command - currently servoing");
             return;
         }
 
-        enqueueCommand([this, m]() {
+        enqueueCommand([this, m = std::move(m)]() {
             double speed = (m.speed != 0.0) ? m.speed : 0.25;
             double acceleration = (m.acceleration != 0.0) ? m.acceleration : 1.2;
             state_ = MOVING;
-            rtde_ctrl_.moveL(convert(m.pose), speed, acceleration); // blocks until robot is done moving
+
+            // blocks until robot is done moving
+            if (!rtde_ctrl_.moveL(convert(m.pose), speed, acceleration))
+                ROS_WARN("moveL command failed");
+
             state_ = IDLE;
         });
     }
 
-    void servoJ(const ur_control_msgs::ServoJoint& m)
+    void servoJ(ur_control_msgs::ServoJoint m)
     {
         if (state_ == MOVING) {
             ROS_WARN("Discarding servoJ command - currently moving");
             return;
         }
 
-        enqueueCommand([this, m]() {
+        enqueueCommand([this, m = std::move(m)]() {
             double lookahead_time = (m.lookahead_time != 0.0) ? m.lookahead_time : 0.1;
             double gain = (m.gain != 0.0) ? m.gain : 300;
 
-            if (state_ != SERVOING)
-                ROS_INFO("SERVOING STARTING");
+            if (state_ != SERVOING) {
+                rate_.reset();
+                state_ = SERVOING; // cleared if we don't keep receiving servo commands for some time
+            }
 
-            state_ = SERVOING; // will be cleared if we don't keep receiving servo commands
-            auto t = std::chrono::steady_clock::now() + step_time_;
-            rtde_ctrl_.servoJ(m.position, 0.0, 0.0, step_time_.count(), lookahead_time, gain); // not blocking
-            std::this_thread::sleep_until(t);
+            // servoJ is non-blocking
+            if (!rtde_ctrl_.servoJ(m.position, 0.0, 0.0, step_time_.count(), lookahead_time, gain))
+                ROS_WARN("servoJ command failed");
+
+            rate_.sleep();
+
+            // TODO
+            // if (!rate_.sleep())
+            //     ROS_WARN("Loop rate not met");
         });
     }
 
@@ -237,12 +257,11 @@ private:
                 break;
 
             if (timeout) {
-                // Clear SERVOING state after timeout (ie. no new servo messages
-                // were received after an interval of servo_timeout_duration_)
+                // Clear SERVOING state after timeout (ie. no new servo
+                // messages were received after a period of time)
                 if (state_ == SERVOING) {
                     rtde_ctrl_.servoStop();
                     state_ = IDLE;
-                    ROS_INFO("SERVOING STOPPED");
                 }
             } else {
                 auto cmd = std::move(cmd_queue_.front());
@@ -268,6 +287,7 @@ private:
     std::mutex cmd_queue_mtx_;
     std::queue<std::function<void()>> cmd_queue_;
     std::thread thread_;
+    monotonic_rate rate_;
 };
 
 int main(int argc, char* argv[])

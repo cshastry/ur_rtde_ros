@@ -18,6 +18,7 @@ include_directories(${catkin_INCLUDE_DIRS})
 
 add_executable(ur_control
   src/ur_control.cpp
+  src/monotonic.cpp
 )
 
 target_link_libraries(ur_control
