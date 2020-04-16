@@ -250,13 +250,14 @@ private:
         cmd_cv_.notify_one();
     }
 
+    // Process servo commands from the queue in a loop
     void processCommands()
     {
-        // Process servo commands from the queue
         while (!cmd_proc_stopped_) {
             std::unique_lock<std::mutex> lock(cmd_queue_mtx_);
 
-            // Wait for queue to be non-empty or stop, but time out after given
+            // Wait for queue to be non-empty or stop, but time out after the
+            // given period of time
             bool timeout = !cmd_cv_.wait_for(lock,
                                              servo_timeout_duration_,
                                              [this]() { return !cmd_queue_.empty() || cmd_proc_stopped_; });
