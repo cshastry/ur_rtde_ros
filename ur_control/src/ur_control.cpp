@@ -61,6 +61,7 @@ auto convert(const geometry_msgs::Twist& m)
     return std::vector<double>{m.linear.x, m.linear.y, m.linear.z, m.angular.x, m.angular.y, m.angular.z};
 }
 
+// Wrapper around ur_rtde::RTDEReceiveInterface to bridge with ROS message types.
 class Receiver
 {
 public:
@@ -112,6 +113,13 @@ private:
     std::vector<std::string> joint_names_;
 };
 
+// Wrapper around ur_rtde::RTDEControlInterface to bridge with ROS message types.
+//
+// Maintains its own thread for processing robot commands because
+//  1) the MoveX commands are blocking and we don't want them to block the ROS
+//     event loop; and
+//  2) the ServoX commands needs to be sent periodically, thus also requiring
+//     control of the timing between calls.
 class Controller
 {
     enum State
