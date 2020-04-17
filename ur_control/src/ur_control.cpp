@@ -3,14 +3,10 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <sensor_msgs/JointState.h>
-#include <ur_control_msgs/MoveJoint.h>
-#include <ur_control_msgs/MovePose.h>
-#include <ur_control_msgs/ServoJoint.h>
 
 #include <ur_rtde/rtde_control_interface.h>
 #include <ur_rtde/rtde_receive_interface.h>
 
-#include <ros/callback_queue.h>
 #include <ros/ros.h>
 
 #include <Eigen/Geometry>
@@ -22,7 +18,7 @@
 
 using namespace std::chrono_literals;
 
-auto convert(const Eigen::Vector3d& v)
+auto convertPoint(const Eigen::Vector3d& v)
 {
     geometry_msgs::Point m;
     m.x = v.x();
@@ -30,7 +26,8 @@ auto convert(const Eigen::Vector3d& v)
     m.z = v.z();
     return m;
 }
-auto convert(const Eigen::Quaterniond& q)
+
+auto convertQuaternion(const Eigen::Quaterniond& q)
 {
     geometry_msgs::Quaternion m;
     m.w = q.w();
@@ -40,23 +37,36 @@ auto convert(const Eigen::Quaterniond& q)
     return m;
 }
 
-auto convert(const std::vector<double>& pose)
+auto convertPose(const std::vector<double>& pose)
 {
     assert(pose.size() == 6);
     Eigen::Vector3d p(pose[0], pose[1], pose[2]); // position
     Eigen::Vector3d r(pose[3], pose[4], pose[5]); // rotation
     Eigen::Quaterniond q(Eigen::AngleAxisd(r.norm(), r.normalized()));
-    return std::make_tuple(convert(p), convert(q));
+    return std::make_tuple(convertPoint(p), convertQuaternion(q));
 }
 
-auto convert(const geometry_msgs::Pose& m)
+auto convertPose(const geometry_msgs::Pose& m)
 {
     Eigen::AngleAxisd aa(Eigen::Quaterniond(m.orientation.w, m.orientation.x, m.orientation.y, m.orientation.z));
     Eigen::Vector3d r = aa.axis() * aa.angle();
     return std::vector<double>{m.position.x, m.position.y, m.position.z, r[0], r[1], r[2]};
 }
 
-auto convert(const geometry_msgs::Twist& m)
+auto convertTwist(const std::vector<double>& twist)
+{
+    assert(twist.size() == 6);
+    geometry_msgs::Twist m;
+    m.linear.x = twist[0];
+    m.linear.y = twist[1];
+    m.linear.z = twist[2];
+    m.angular.x = twist[3];
+    m.angular.y = twist[4];
+    m.angular.z = twist[5];
+    return m;
+}
+
+auto convertTwist(const geometry_msgs::Twist& m)
 {
     return std::vector<double>{m.linear.x, m.linear.y, m.linear.z, m.angular.x, m.angular.y, m.angular.z};
 }
@@ -66,20 +76,22 @@ class Receiver
 {
 public:
     explicit Receiver(std::string base_frame,
-                      // std::string tool_frame,
+                      std::string tool_frame,
                       std::string prefix,
                       std::string hostname,
+                      std::vector<std::string> variables,
                       int port = 30004)
-        : rtde_recv_(hostname, {"actual_q", "actual_qd", "actual_TCP_pose"}, port)
+        : rtde_recv_(std::move(hostname), std::move(variables), port)
         , base_frame_(prefix + base_frame)
+        , tool_frame_(prefix + tool_frame)
     {
-        static const std::vector<std::string> base_joint_names{
-            "base_joint",
-            "shoulder_joint",
+        static const std::vector<std::string> base_joint_names = {
+            "shoulder_pan_joint",
+            "shoulder_lift_joint",
             "elbow_joint",
-            "wrist1_joint",
-            "wrist2_joint",
-            "wrist3_joint",
+            "wrist_1_joint",
+            "wrist_2_joint",
+            "wrist_3_joint",
         };
 
         for (const auto& n : base_joint_names)
@@ -89,27 +101,36 @@ public:
     sensor_msgs::JointState getJointStateMsg()
     {
         sensor_msgs::JointState m;
+        m.header.stamp = ros::Time::now();
         m.name = joint_names_;
         m.position = rtde_recv_.getActualQ();
         m.velocity = rtde_recv_.getActualQd();
-        // TODO m.effort
-        m.header.stamp = ros::Time::now();
+        m.effort = rtde_recv_.getActualCurrent();
         return m;
     }
 
-    geometry_msgs::PoseStamped getActualTCPPoseStampedMsg()
+    geometry_msgs::PoseStamped getActualTCPPoseMsg()
     {
         geometry_msgs::PoseStamped m;
-        m.header.frame_id = base_frame_;
-        std::tie(m.pose.position, m.pose.orientation) = convert(rtde_recv_.getActualTCPPose());
         m.header.stamp = ros::Time::now();
+        m.header.frame_id = base_frame_;
+        std::tie(m.pose.position, m.pose.orientation) = convertPose(rtde_recv_.getActualTCPPose());
+        return m;
+    }
+
+    geometry_msgs::TwistStamped getActualTCPTwistMsg()
+    {
+        geometry_msgs::TwistStamped m;
+        m.header.stamp = ros::Time::now();
+        m.header.frame_id = tool_frame_;
+        m.twist = convertTwist(rtde_recv_.getActualTCPSpeed());
         return m;
     }
 
 private:
     ur_rtde::RTDEReceiveInterface rtde_recv_;
     std::string base_frame_;
-    //std::string tool_frame_;
+    std::string tool_frame_;
     std::vector<std::string> joint_names_;
 };
 
@@ -131,7 +152,7 @@ class Controller
 
 public:
     explicit Controller(std::string hostname, int port = 30004)
-        : rtde_ctrl_(hostname, port)
+        : rtde_ctrl_(std::move(hostname), port)
         , step_time_(rtde_ctrl_.getStepTime())
         , servo_timeout_duration_(100ms)
         , state_(IDLE)
@@ -143,7 +164,7 @@ public:
     ~Controller()
     {
         stop();
-        rtde_ctrl_.stopRobot();
+        rtde_ctrl_.stopScript();
     }
 
     void start()
@@ -165,12 +186,12 @@ public:
             thread_.join();
     }
 
-    double stepTime() const
+    double getStepTime() const
     {
         return step_time_.count();
     }
 
-    void moveJ(ur_control_msgs::MoveJoint m)
+    void moveJ(sensor_msgs::JointState m)
     {
         if (state_ == SERVOING) {
             ROS_WARN("Discarding MoveJ command - currently servoing");
@@ -178,19 +199,17 @@ public:
         }
 
         enqueueCommand([this, m = std::move(m)]() {
-            double speed = (m.speed != 0.0) ? m.speed : 1.05;
-            double acceleration = (m.acceleration != 0.0) ? m.acceleration : 1.4;
             state_ = MOVING;
 
             // blocks until robot is done moving
-            if (!rtde_ctrl_.moveJ(m.position, speed, acceleration))
-                ROS_WARN("moveJ command failed");
+            if (!rtde_ctrl_.moveJ(m.position, 1.05, 1.4))
+                ROS_WARN("MoveJ command failed");
 
             state_ = IDLE;
         });
     }
 
-    void moveL(ur_control_msgs::MovePose m)
+    void moveL(geometry_msgs::PoseStamped m)
     {
         if (state_ == SERVOING) {
             ROS_WARN("Discarding MoveL command - currently servoing");
@@ -198,19 +217,17 @@ public:
         }
 
         enqueueCommand([this, m = std::move(m)]() {
-            double speed = (m.speed != 0.0) ? m.speed : 0.25;
-            double acceleration = (m.acceleration != 0.0) ? m.acceleration : 1.2;
             state_ = MOVING;
 
             // blocks until robot is done moving
-            if (!rtde_ctrl_.moveL(convert(m.pose), speed, acceleration))
-                ROS_WARN("moveL command failed");
+            if (!rtde_ctrl_.moveL(convertPose(m.pose), 0.25, 1.2))
+                ROS_WARN("MoveL command failed");
 
             state_ = IDLE;
         });
     }
 
-    void servoJ(ur_control_msgs::ServoJoint m)
+    void servoJ(sensor_msgs::JointState m)
     {
         if (state_ == MOVING) {
             ROS_WARN("Discarding servoJ command - currently moving");
@@ -218,23 +235,17 @@ public:
         }
 
         enqueueCommand([this, m = std::move(m)]() {
-            double lookahead_time = (m.lookahead_time != 0.0) ? m.lookahead_time : 0.1;
-            double gain = (m.gain != 0.0) ? m.gain : 300;
-
             if (state_ != SERVOING) {
                 rate_.reset();
                 state_ = SERVOING; // cleared if we don't keep receiving servo commands for some time
             }
 
             // servoJ is non-blocking
-            if (!rtde_ctrl_.servoJ(m.position, 0.0, 0.0, step_time_.count(), lookahead_time, gain))
-                ROS_WARN("servoJ command failed");
+            if (!rtde_ctrl_.servoJ(m.position, 0.0, 0.0, step_time_.count(), 0.1, 300))
+                ROS_WARN("ServoJ command failed");
 
-            rate_.sleep();
-
-            // TODO
-            // if (!rate_.sleep())
-            //     ROS_WARN("Loop rate not met");
+            if (!rate_.sleep())
+                ROS_WARN("ServoJ loop rate not met");
         });
     }
 
@@ -308,6 +319,7 @@ int main(int argc, char* argv[])
     ros::NodeHandle nh_priv("~");
 
     auto publish_tcp_pose = nh_priv.param("publish_tcp_pose", false);
+    auto publish_tcp_twist = nh_priv.param("publish_tcp_twist", false);
     auto prefix = nh_priv.param("prefix", ""s);
     auto hostname = nh_priv.param("hostname", ""s);
     auto port = nh_priv.param("port", 30004);
@@ -315,27 +327,38 @@ int main(int argc, char* argv[])
     if (hostname.empty())
         throw std::runtime_error("The ~hostname parameter is not set");
 
-    Receiver receiver("base", prefix, hostname, port);
+    std::vector<std::string> output_variables = {"actual_q", "actual_qd", "actual_current"};
+
+    if (publish_tcp_pose)
+        output_variables.push_back("actual_TCP_pose");
+
+    if (publish_tcp_twist)
+        output_variables.push_back("actual_TCP_speed");
+
+    Receiver receiver("base", "tcp", prefix, hostname, output_variables, port);
     Controller controller(hostname, port);
 
     auto pub_joint_state = nh.advertise<sensor_msgs::JointState>("joint_states", 1);
-    auto pub_tcp_pose = (publish_tcp_pose) ? nh.advertise<geometry_msgs::PoseStamped>("tcp_pose_current", 1) : ros::Publisher();
+    auto pub_tcp_pose = (publish_tcp_pose) ? nh.advertise<geometry_msgs::PoseStamped>("tcp_pose", 1) : ros::Publisher{};
+    auto pub_tcp_twist = (publish_tcp_twist) ? nh.advertise<geometry_msgs::TwistStamped>("tcp_twist", 1) : ros::Publisher{};
 
     std::list<ros::Subscriber> subscribers{
-        nh.subscribe("move_j", 10, &Controller::moveJ, &controller, ros::TransportHints().tcpNoDelay()),
-        nh.subscribe("move_l", 10, &Controller::moveL, &controller, ros::TransportHints().tcpNoDelay()),
-        nh.subscribe("servo_j", 10, &Controller::servoJ, &controller, ros::TransportHints().tcpNoDelay()),
+        nh.subscribe("move_j", 2, &Controller::moveJ, &controller, ros::TransportHints().tcpNoDelay()),
+        nh.subscribe("move_l", 2, &Controller::moveL, &controller, ros::TransportHints().tcpNoDelay()),
+        nh.subscribe("servo_j", 8, &Controller::servoJ, &controller, ros::TransportHints().tcpNoDelay()),
     };
 
     // Schedule timer to publish robot state
-    auto timer = nh.createWallTimer(ros::WallDuration(controller.stepTime()),
-                                    [&](const auto&) {
-                                        pub_joint_state.publish(receiver.getJointStateMsg());
+    auto timer = nh.createSteadyTimer(ros::WallDuration(controller.getStepTime()),
+                                      [&](const auto&) {
+                                          pub_joint_state.publish(receiver.getJointStateMsg());
 
-                                        if (publish_tcp_pose)
-                                            pub_tcp_pose.publish(receiver.getActualTCPPoseStampedMsg());
-                                    });
+                                          if (publish_tcp_pose)
+                                              pub_tcp_pose.publish(receiver.getActualTCPPoseMsg());
 
+                                          if (publish_tcp_twist)
+                                              pub_tcp_pose.publish(receiver.getActualTCPTwistMsg());
+                                      });
     controller.start();
     ros::spin();
     controller.stop();
