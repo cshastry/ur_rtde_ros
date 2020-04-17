@@ -1,4 +1,4 @@
-﻿#include "monotonic.h"
+#include "monotonic.h"
 
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
@@ -37,7 +37,7 @@ auto convertQuaternion(const Eigen::Quaterniond& q)
     return m;
 }
 
-auto convertPose(const std::vector<double>& pose)
+auto convertPose(std::vector<double> pose)
 {
     assert(pose.size() == 6);
     Eigen::Vector3d p(pose[0], pose[1], pose[2]); // position
@@ -53,7 +53,7 @@ auto convertPose(const geometry_msgs::Pose& m)
     return std::vector<double>{m.position.x, m.position.y, m.position.z, r[0], r[1], r[2]};
 }
 
-auto convertTwist(const std::vector<double>& twist)
+auto convertTwist(std::vector<double> twist)
 {
     assert(twist.size() == 6);
     geometry_msgs::Twist m;
@@ -240,7 +240,7 @@ public:
                 state_ = SERVOING; // cleared if we don't keep receiving servo commands for some time
             }
 
-            // servoJ is non-blocking
+            // ur_rtde servoJ is non-blocking
             if (!rtde_ctrl_.servoJ(m.position, 0.0, 0.0, step_time_.count(), 0.1, 300))
                 ROS_WARN("ServoJ command failed");
 
