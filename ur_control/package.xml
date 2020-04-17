@@ -14,5 +14,6 @@
   <depend>ur_rtde</depend>
 
   <depend>roscpp</depend>
-  <depend>ur_control_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
 </package>

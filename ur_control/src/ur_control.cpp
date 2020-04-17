@@ -327,15 +327,15 @@ int main(int argc, char* argv[])
     if (hostname.empty())
         throw std::runtime_error("The ~hostname parameter is not set");
 
-    std::vector<std::string> output_variables = {"actual_q", "actual_qd", "actual_current"};
+    std::vector<std::string> rtde_output_variables = {"actual_q", "actual_qd", "actual_current"};
 
     if (publish_tcp_pose)
-        output_variables.push_back("actual_TCP_pose");
+        rtde_output_variables.push_back("actual_TCP_pose");
 
     if (publish_tcp_twist)
-        output_variables.push_back("actual_TCP_speed");
+        rtde_output_variables.push_back("actual_TCP_speed");
 
-    Receiver receiver("base", "tcp", prefix, hostname, output_variables, port);
+    Receiver receiver("base", "tcp", prefix, hostname, rtde_output_variables, port);
     Controller controller(hostname, port);
 
     auto pub_joint_state = nh.advertise<sensor_msgs::JointState>("joint_states", 1);
