@@ -298,6 +298,7 @@ private:
                 // messages were received after a period of time)
                 if (state_ == SERVOING) {
                     rtde_ctrl_.servoStop();
+                    cmd_queue_ = {}; // clear queue
                     state_ = IDLE;
                 }
             } else {
