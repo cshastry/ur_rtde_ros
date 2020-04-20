@@ -3,6 +3,7 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <sensor_msgs/JointState.h>
+#include <ursurg_msgs/SetFloat64.h>
 
 #include <ur_rtde/rtde_control_interface.h>
 #include <ur_rtde/rtde_receive_interface.h>
@@ -158,6 +159,8 @@ public:
         , state_(IDLE)
         , cmd_proc_stopped_(true)
         , rate_(step_time_)
+        , servoj_lookahead_time_(0.1)
+        , servoj_gain_(300)
     {
     }
 
@@ -191,62 +194,76 @@ public:
         return step_time_.count();
     }
 
-    void moveJ(sensor_msgs::JointState m)
+    void moveJ(const sensor_msgs::JointState& m)
     {
         if (state_ == SERVOING) {
             ROS_WARN("Discarding MoveJ command - currently servoing");
             return;
         }
 
-        enqueueCommand([this, m = std::move(m)]() {
+        enqueueCommand([this, q = m.position]() {
             state_ = MOVING;
 
             // blocks until robot is done moving
-            if (!rtde_ctrl_.moveJ(m.position, 1.05, 1.4))
+            if (!rtde_ctrl_.moveJ(q, 1.05, 1.4))
                 ROS_WARN("MoveJ command failed");
 
             state_ = IDLE;
         });
     }
 
-    void moveL(geometry_msgs::PoseStamped m)
-    {
-        if (state_ == SERVOING) {
-            ROS_WARN("Discarding MoveL command - currently servoing");
-            return;
-        }
-
-        enqueueCommand([this, m = std::move(m)]() {
-            state_ = MOVING;
-
-            // blocks until robot is done moving
-            if (!rtde_ctrl_.moveL(convertPose(m.pose), 0.25, 1.2))
-                ROS_WARN("MoveL command failed");
-
-            state_ = IDLE;
-        });
-    }
-
-    void servoJ(sensor_msgs::JointState m)
+    void servoJ(const sensor_msgs::JointState& m)
     {
         if (state_ == MOVING) {
             ROS_WARN("Discarding servoJ command - currently moving");
             return;
         }
 
-        enqueueCommand([this, m = std::move(m)]() {
+        enqueueCommand([this, q = m.position]() {
             if (state_ != SERVOING) {
                 rate_.reset();
                 state_ = SERVOING; // cleared if we don't keep receiving servo commands for some time
             }
 
             // ur_rtde servoJ is non-blocking
-            if (!rtde_ctrl_.servoJ(m.position, 0.0, 0.0, step_time_.count(), 0.1, 300))
+            if (!rtde_ctrl_.servoJ(q, 0.0, 0.0, step_time_.count(), servoj_lookahead_time_, servoj_gain_))
                 ROS_WARN("ServoJ command failed");
 
             if (!rate_.sleep())
                 ROS_WARN("ServoJ loop rate not met");
         });
+    }
+
+    void moveL(const geometry_msgs::PoseStamped& m)
+    {
+        if (state_ == SERVOING) {
+            ROS_WARN("Discarding MoveL command - currently servoing");
+            return;
+        }
+
+        enqueueCommand([this, pose = convertPose(m.pose)]() {
+            state_ = MOVING;
+
+            // blocks until robot is done moving
+            if (!rtde_ctrl_.moveL(pose, 0.25, 1.2))
+                ROS_WARN("MoveL command failed");
+
+            state_ = IDLE;
+        });
+    }
+
+    bool setServoJLookaheadTime(ursurg_msgs::SetFloat64::Request& req,
+                                ursurg_msgs::SetFloat64::Response&)
+    {
+        servoj_lookahead_time_ = req.value;
+        return true;
+    }
+
+    bool setServoJGain(ursurg_msgs::SetFloat64::Request& req,
+                       ursurg_msgs::SetFloat64::Response&)
+    {
+        servoj_gain_ = req.value;
+        return true;
     }
 
 private:
@@ -308,6 +325,8 @@ private:
     std::queue<std::function<void()>> cmd_queue_;
     std::thread thread_;
     monotonic_rate rate_;
+    double servoj_lookahead_time_;
+    double servoj_gain_;
 };
 
 int main(int argc, char* argv[])
@@ -341,6 +360,11 @@ int main(int argc, char* argv[])
     auto pub_joint_state = nh.advertise<sensor_msgs::JointState>("joint_states", 1);
     auto pub_tcp_pose = (publish_tcp_pose) ? nh.advertise<geometry_msgs::PoseStamped>("tcp_pose", 1) : ros::Publisher{};
     auto pub_tcp_twist = (publish_tcp_twist) ? nh.advertise<geometry_msgs::TwistStamped>("tcp_twist", 1) : ros::Publisher{};
+
+    std::list<ros::ServiceServer> service_servers{
+        nh.advertiseService("set_servoj_lookahead_time", &Controller::setServoJLookaheadTime, &controller),
+        nh.advertiseService("set_servoj_gain", &Controller::setServoJGain, &controller),
+    };
 
     std::list<ros::Subscriber> subscribers{
         nh.subscribe("move_j", 2, &Controller::moveJ, &controller, ros::TransportHints().tcpNoDelay()),
