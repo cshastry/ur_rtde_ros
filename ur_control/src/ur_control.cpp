@@ -359,18 +359,18 @@ int main(int argc, char* argv[])
     Controller controller(hostname, port);
 
     auto pub_joint_state = nh.advertise<sensor_msgs::JointState>("joint_states", 1);
-    auto pub_tcp_pose = (publish_tcp_pose) ? nh.advertise<geometry_msgs::PoseStamped>("tcp_pose", 1) : ros::Publisher{};
-    auto pub_tcp_twist = (publish_tcp_twist) ? nh.advertise<geometry_msgs::TwistStamped>("tcp_twist", 1) : ros::Publisher{};
+    auto pub_tcp_pose = (publish_tcp_pose) ? nh.advertise<geometry_msgs::PoseStamped>("tcp_pose_current", 1) : ros::Publisher{};
+    auto pub_tcp_twist = (publish_tcp_twist) ? nh.advertise<geometry_msgs::TwistStamped>("tcp_twist_current", 1) : ros::Publisher{};
 
     std::list<ros::ServiceServer> service_servers{
-        nh.advertiseService("set_servoj_lookahead_time", &Controller::setServoJLookaheadTime, &controller),
-        nh.advertiseService("set_servoj_gain", &Controller::setServoJGain, &controller),
+        nh.advertiseService("set_servo_joint_lookahead_time", &Controller::setServoJLookaheadTime, &controller),
+        nh.advertiseService("set_servo_joint_gain", &Controller::setServoJGain, &controller),
     };
 
     std::list<ros::Subscriber> subscribers{
-        nh.subscribe("move_j", 2, &Controller::moveJ, &controller, ros::TransportHints().tcpNoDelay()),
-        nh.subscribe("move_l", 2, &Controller::moveL, &controller, ros::TransportHints().tcpNoDelay()),
-        nh.subscribe("servo_j", 8, &Controller::servoJ, &controller, ros::TransportHints().tcpNoDelay()),
+        nh.subscribe("move_joint", 2, &Controller::moveJ, &controller, ros::TransportHints().tcpNoDelay()),
+        nh.subscribe("move_tool_linear", 2, &Controller::moveL, &controller, ros::TransportHints().tcpNoDelay()),
+        nh.subscribe("servo_joint", 8, &Controller::servoJ, &controller, ros::TransportHints().tcpNoDelay()),
     };
 
     // Schedule timer to publish robot state
