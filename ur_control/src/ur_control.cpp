@@ -1,5 +1,7 @@
 #include "monotonic.h"
 
+#include <ursurg_common/conversions/eigen.h>
+
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <sensor_msgs/JointState.h>
@@ -19,42 +21,26 @@
 
 using namespace std::chrono_literals;
 
-auto convertPoint(const Eigen::Vector3d& v)
-{
-    geometry_msgs::Point m;
-    m.x = v.x();
-    m.y = v.y();
-    m.z = v.z();
-    return m;
-}
-
-auto convertQuaternion(const Eigen::Quaterniond& q)
-{
-    geometry_msgs::Quaternion m;
-    m.w = q.w();
-    m.x = q.x();
-    m.y = q.y();
-    m.z = q.z();
-    return m;
-}
-
-auto convertPose(std::vector<double> pose)
+geometry_msgs::Pose convertPose(std::vector<double> pose)
 {
     assert(pose.size() == 6);
     Eigen::Vector3d p(pose[0], pose[1], pose[2]); // position
     Eigen::Vector3d r(pose[3], pose[4], pose[5]); // rotation
     Eigen::Quaterniond q(Eigen::AngleAxisd(r.norm(), r.normalized()));
-    return std::make_tuple(convertPoint(p), convertQuaternion(q));
+    geometry_msgs::Pose m;
+    m.position = convert_to<geometry_msgs::Point>(p);
+    m.orientation = convert_to<geometry_msgs::Quaternion>(q);
+    return m;
 }
 
-auto convertPose(const geometry_msgs::Pose& m)
+std::vector<double> convertPose(const geometry_msgs::Pose& m)
 {
-    Eigen::AngleAxisd aa(Eigen::Quaterniond(m.orientation.w, m.orientation.x, m.orientation.y, m.orientation.z));
+    Eigen::AngleAxisd aa(convert_to<Eigen::Quaterniond>(m.orientation));
     Eigen::Vector3d r = aa.axis() * aa.angle();
-    return std::vector<double>{m.position.x, m.position.y, m.position.z, r[0], r[1], r[2]};
+    return {m.position.x, m.position.y, m.position.z, r[0], r[1], r[2]};
 }
 
-auto convertTwist(std::vector<double> twist)
+geometry_msgs::Twist convertTwist(std::vector<double> twist)
 {
     assert(twist.size() == 6);
     geometry_msgs::Twist m;
@@ -67,9 +53,9 @@ auto convertTwist(std::vector<double> twist)
     return m;
 }
 
-auto convertTwist(const geometry_msgs::Twist& m)
+std::vector<double> convertTwist(const geometry_msgs::Twist& m)
 {
-    return std::vector<double>{m.linear.x, m.linear.y, m.linear.z, m.angular.x, m.angular.y, m.angular.z};
+    return {m.linear.x, m.linear.y, m.linear.z, m.angular.x, m.angular.y, m.angular.z};
 }
 
 // Wrapper around ur_rtde::RTDEReceiveInterface to bridge with ROS message types.
@@ -115,7 +101,7 @@ public:
         geometry_msgs::PoseStamped m;
         m.header.stamp = ros::Time::now();
         m.header.frame_id = base_frame_;
-        std::tie(m.pose.position, m.pose.orientation) = convertPose(rtde_recv_.getActualTCPPose());
+        m.pose = convertPose(rtde_recv_.getActualTCPPose());
         return m;
     }
 

@@ -16,5 +16,6 @@
   <depend>roscpp</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>ursurg_common</depend>
   <depend>ursurg_msgs</depend>
 </package>
