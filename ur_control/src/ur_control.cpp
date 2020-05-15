@@ -162,6 +162,12 @@ public:
         , servoj_lookahead_time_(0.1)
         , servoj_gain_(300)
     {
+        // The getStepTime() returns zero for simulated UR robots, so we
+        // correct for that here
+        if (step_time_ == std::chrono::duration<double>::zero()) {
+            step_time_ = std::chrono::duration<double>(1.0 / 125);
+            rate_ = monotonic_rate(step_time_);
+        }
     }
 
     ~Controller()
