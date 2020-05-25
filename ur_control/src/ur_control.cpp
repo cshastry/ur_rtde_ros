@@ -138,9 +138,13 @@ class Controller
     };
 
 public:
-    explicit Controller(std::string hostname, int port = 30004)
+    explicit Controller(std::string base_frame,
+                        std::string prefix,
+                        std::string hostname,
+                        int port = 30004)
         : rtde_ctrl_(std::move(hostname), port)
         , step_time_(rtde_ctrl_.getStepTime())
+        , base_frame_(prefix + base_frame)
         , servo_timeout_duration_(100ms)
         , state_(IDLE)
         , cmd_proc_stopped_(true)
@@ -233,6 +237,14 @@ public:
             return;
         }
 
+        if (m.header.frame_id != base_frame_) {
+            ROS_WARN_STREAM("Discarding MoveL command with target frame "
+                            << "'" << m.header.frame_id << "'" <<
+                            "(expected "
+                            << "'" << base_frame_ << "')");
+            return;
+        }
+
         enqueueCommand([this, pose = convertPose(m.pose)]() {
             state_ = MOVING;
 
@@ -309,6 +321,7 @@ private:
 
 private:
     ur_rtde::RTDEControlInterface rtde_ctrl_;
+    std::string base_frame_;
     std::chrono::duration<double> step_time_;
     std::chrono::duration<double> servo_timeout_duration_;
     std::atomic<State> state_;
@@ -347,8 +360,8 @@ int main(int argc, char* argv[])
     if (publish_tcp_twist)
         rtde_output_variables.push_back("actual_TCP_speed");
 
-    Receiver receiver("base", "tcp", prefix, hostname, rtde_output_variables, port);
-    Controller controller(hostname, port);
+    Receiver receiver("base_link", "ee_link", prefix, hostname, rtde_output_variables, port);
+    Controller controller("base_link", prefix, hostname, port);
 
     auto pub_joint_state = nh.advertise<sensor_msgs::JointState>("joint_states", 1);
     auto pub_tcp_pose = (publish_tcp_pose) ? nh.advertise<geometry_msgs::PoseStamped>("tcp_pose_current", 1) : ros::Publisher{};
