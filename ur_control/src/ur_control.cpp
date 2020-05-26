@@ -1,6 +1,7 @@
 #include "monotonic.h"
 
 #include <ursurg_common/conversions/eigen.h>
+#include <ursurg_common/realtime.h>
 
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
@@ -144,8 +145,8 @@ public:
                         int port = 30004)
         : rtde_ctrl_(std::move(hostname), port)
         , step_time_(rtde_ctrl_.getStepTime())
-        , base_frame_(prefix + base_frame)
         , servo_timeout_duration_(100ms)
+        , base_frame_(prefix + base_frame)
         , state_(IDLE)
         , cmd_proc_stopped_(true)
         , rate_(step_time_)
@@ -175,6 +176,13 @@ public:
 
         cmd_proc_stopped_ = false;
         thread_ = std::thread([this]() { processCommands(); });
+
+        // Set realtime priority for controller thread
+        try {
+            thread_set_sched_fifo_with_priority(thread_.native_handle(), 80);
+        } catch (const std::runtime_error& e) {
+            ROS_WARN_STREAM("Setting realtime thread priority failed: " << e.what());
+        }
     }
 
     void stop()
@@ -321,9 +329,9 @@ private:
 
 private:
     ur_rtde::RTDEControlInterface rtde_ctrl_;
-    std::string base_frame_;
     std::chrono::duration<double> step_time_;
     std::chrono::duration<double> servo_timeout_duration_;
+    std::string base_frame_;
     std::atomic<State> state_;
     std::atomic<bool> cmd_proc_stopped_;
     std::condition_variable cmd_cv_;
@@ -338,6 +346,13 @@ private:
 int main(int argc, char* argv[])
 {
     using namespace std::string_literals;
+
+    // Lock memory and handle page faults for better realtime performance
+    try {
+        lock_and_prefault_mem(32 * 1024 * 1024);
+    } catch (const std::runtime_error& e) {
+        std::cerr << "Lock/prefault memory failed: " << e.what() << std::endl;
+    }
 
     ros::init(argc, argv, "ur_control");
     ros::NodeHandle nh;
@@ -389,6 +404,7 @@ int main(int argc, char* argv[])
                                           if (publish_tcp_twist)
                                               pub_tcp_pose.publish(receiver.getActualTCPTwistMsg());
                                       });
+
     controller.start();
     ros::spin();
     controller.stop();
