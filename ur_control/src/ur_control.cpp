@@ -156,8 +156,7 @@ public:
         // The getStepTime() returns zero for simulated UR robots, so we
         // correct for that here
         if (step_time_ == std::chrono::duration<double>::zero()) {
-            step_time_ = std::chrono::duration<double>(1.0 / 125);
-            rate_ = monotonic_rate(step_time_);
+            setStepTime(1.0 / 125);
         }
     }
 
@@ -191,6 +190,12 @@ public:
 
         if (thread_.joinable())
             thread_.join();
+    }
+
+    void setStepTime(double t)
+    {
+        step_time_ = std::chrono::duration<double>(t);
+        rate_ = monotonic_rate(step_time_);
     }
 
     double getStepTime() const
@@ -247,8 +252,8 @@ public:
 
         if (m.header.frame_id != base_frame_) {
             ROS_WARN_STREAM("Discarding MoveL command with target frame "
-                            << "'" << m.header.frame_id << "'" <<
-                            "(expected "
+                            << "'" << m.header.frame_id << "'"
+                            << "(expected "
                             << "'" << base_frame_ << "')");
             return;
         }
@@ -262,6 +267,19 @@ public:
 
             state_ = IDLE;
         });
+    }
+
+    bool setServoLoopRate(ursurg_msgs::SetFloat64::Request& req,
+                          ursurg_msgs::SetFloat64::Response&)
+    {
+        ROS_INFO("Stopping servo loop");
+        stop();
+        cmd_queue_ = {};
+        setStepTime(1.0 / req.value);
+        ROS_INFO("Setting loop rate: %f", req.value);
+        ROS_INFO("Starting servo loop");
+        start();
+        return true;
     }
 
     bool setServoJLookaheadTime(ursurg_msgs::SetFloat64::Request& req,
@@ -279,7 +297,7 @@ public:
     }
 
 private:
-    template <typename Callable>
+    template<typename Callable>
     void enqueueCommand(Callable&& f)
     {
         {
@@ -383,6 +401,7 @@ int main(int argc, char* argv[])
     auto pub_tcp_twist = (publish_tcp_twist) ? nh.advertise<geometry_msgs::TwistStamped>("tcp_twist_current", 1) : ros::Publisher{};
 
     std::list<ros::ServiceServer> service_servers{
+        nh.advertiseService("set_servo_loop_rate", &Controller::setServoLoopRate, &controller),
         nh.advertiseService("set_servo_joint_lookahead_time", &Controller::setServoJLookaheadTime, &controller),
         nh.advertiseService("set_servo_joint_gain", &Controller::setServoJGain, &controller),
     };
