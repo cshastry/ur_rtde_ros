@@ -272,13 +272,10 @@ public:
     bool setServoLoopRate(ursurg_msgs::SetFloat64::Request& req,
                           ursurg_msgs::SetFloat64::Response&)
     {
-        ROS_INFO("Stopping servo loop");
-        stop();
-        cmd_queue_ = {};
+        if (state_ != IDLE)
+            return false;
+
         setStepTime(1.0 / req.value);
-        ROS_INFO("Setting loop rate: %f", req.value);
-        ROS_INFO("Starting servo loop");
-        start();
         return true;
     }
 
