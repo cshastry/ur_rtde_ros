@@ -157,7 +157,7 @@ public:
         auto ur_step_time = rtde_ctrl_.getStepTime();
 
         if (ur_step_time == 0.0) {
-            ROS_WARN("UR robot returned step time 0, defaulting to %f ms (%f Hz)", getStepTime() * 1000, 1.0 / getStepTime());
+            ROS_WARN("UR returned step time 0, defaulting to %.2f ms (%.2f Hz)", getStepTime() * 1000, 1.0 / getStepTime());
         } else {
             setLoopRate(1.0 / ur_step_time);
         }
@@ -198,7 +198,7 @@ public:
     void setLoopRate(double f)
     {
         rate_ = monotonic_rate(f);
-        ROS_INFO("Setting loop period to %f ms (%f Hz)", getStepTime() * 1000, 1.0 / getStepTime());
+        ROS_INFO("Setting loop period to %.2f ms (%.2f Hz)", getStepTime() * 1000, 1.0 / getStepTime());
     }
 
     double getStepTime() const
