@@ -198,7 +198,7 @@ public:
     void setLoopRate(double f)
     {
         rate_ = monotonic_rate(f);
-        ROS_INFO("Setting loop period to %.2f ms (%.2f Hz)", getStepTime() * 1000, 1.0 / getStepTime());
+        ROS_INFO("Setting control loop period to %.2f ms (%.2f Hz)", getStepTime() * 1000, 1.0 / getStepTime());
     }
 
     double getStepTime() const
@@ -209,7 +209,7 @@ public:
     void moveJ(const sensor_msgs::JointState& m)
     {
         if (state_ == SERVOING) {
-            ROS_WARN("Discarding MoveJ command - currently servoing");
+            ROS_WARN("Discarding MoveJ command - currently executing servo command");
             return;
         }
 
@@ -227,7 +227,7 @@ public:
     void servoJ(const sensor_msgs::JointState& m)
     {
         if (state_ == MOVING) {
-            ROS_WARN("Discarding servoJ command - currently moving");
+            ROS_WARN("Discarding servoJ command - currently executing move command");
             return;
         }
 
@@ -242,7 +242,7 @@ public:
                 ROS_WARN("ServoJ command failed");
 
             if (!rate_.sleep())
-                ROS_WARN("ServoJ loop rate not met");
+                ROS_WARN_THROTTLE(1, "ServoJ loop rate not met");
         });
     }
 
