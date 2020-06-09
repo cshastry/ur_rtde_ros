@@ -177,11 +177,11 @@ public:
         thread_ = std::thread([this]() { processCommands(); });
 
         // Set realtime priority for controller thread
-        try {
-            thread_set_sched_fifo_with_priority(thread_.native_handle(), 80);
-        } catch (const std::runtime_error& e) {
-            ROS_WARN_STREAM("Setting realtime thread priority failed: " << e.what());
-        }
+        //try {
+        //    thread_set_sched_fifo_with_priority(thread_.native_handle(), 80);
+        //} catch (const std::runtime_error& e) {
+        //    ROS_WARN_STREAM("Setting realtime thread priority failed: " << e.what());
+        //}
     }
 
     void stop()
@@ -363,11 +363,11 @@ int main(int argc, char* argv[])
     using namespace std::string_literals;
 
     // Lock memory and handle page faults for better realtime performance
-    try {
-        lock_and_prefault_mem(32 * 1024 * 1024);
-    } catch (const std::runtime_error& e) {
-        std::cerr << "Lock/prefault memory failed: " << e.what() << std::endl;
-    }
+    //try {
+    //    lock_and_prefault_mem(32 * 1024 * 1024);
+    //} catch (const std::runtime_error& e) {
+    //    std::cerr << "Lock/prefault memory failed: " << e.what() << std::endl;
+    //}
 
     ros::init(argc, argv, "ur_control");
     ros::NodeHandle nh;
