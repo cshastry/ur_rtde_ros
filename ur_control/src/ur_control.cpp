@@ -144,19 +144,22 @@ public:
                         std::string hostname,
                         int port = 30004)
         : rtde_ctrl_(std::move(hostname), port)
-        , step_time_(rtde_ctrl_.getStepTime())
         , servo_timeout_duration_(100ms)
         , base_frame_(prefix + base_frame)
         , state_(IDLE)
         , cmd_proc_stopped_(true)
-        , rate_(step_time_)
+        , rate_(125)
         , servoj_lookahead_time_(0.1)
         , servoj_gain_(300)
     {
-        // The getStepTime() returns zero for simulated UR robots, so we
+        // It seems getStepTime() returns zero for simulated UR robots, so we
         // correct for that here
-        if (step_time_ == std::chrono::duration<double>::zero()) {
-            setStepTime(1.0 / 125);
+        auto ur_step_time = rtde_ctrl_.getStepTime();
+
+        if (ur_step_time == 0.0) {
+            ROS_WARN("UR robot returned step time 0, defaulting to %f ms (%f Hz)", getStepTime() * 1000, 1.0 / getStepTime());
+        } else {
+            setLoopRate(1.0 / ur_step_time);
         }
     }
 
@@ -192,15 +195,15 @@ public:
             thread_.join();
     }
 
-    void setStepTime(double t)
+    void setLoopRate(double f)
     {
-        step_time_ = std::chrono::duration<double>(t);
-        rate_ = monotonic_rate(step_time_);
+        rate_ = monotonic_rate(f);
+        ROS_INFO("Setting loop period to %f ms (%f Hz)", getStepTime() * 1000, 1.0 / getStepTime());
     }
 
     double getStepTime() const
     {
-        return step_time_.count();
+        return std::chrono::duration<double>(rate_.expected_cycle_time()).count();
     }
 
     void moveJ(const sensor_msgs::JointState& m)
@@ -235,7 +238,7 @@ public:
             }
 
             // ur_rtde servoJ is non-blocking
-            if (!rtde_ctrl_.servoJ(q, 0.0, 0.0, step_time_.count(), servoj_lookahead_time_, servoj_gain_))
+            if (!rtde_ctrl_.servoJ(q, 0.0, 0.0, getStepTime(), servoj_lookahead_time_, servoj_gain_))
                 ROS_WARN("ServoJ command failed");
 
             if (!rate_.sleep())
@@ -275,7 +278,7 @@ public:
         if (state_ != IDLE)
             return false;
 
-        setStepTime(1.0 / req.value);
+        setLoopRate(req.value);
         return true;
     }
 
@@ -344,7 +347,6 @@ private:
 
 private:
     ur_rtde::RTDEControlInterface rtde_ctrl_;
-    std::chrono::duration<double> step_time_;
     std::chrono::duration<double> servo_timeout_duration_;
     std::string base_frame_;
     std::atomic<State> state_;
