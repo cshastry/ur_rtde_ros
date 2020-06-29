@@ -72,10 +72,12 @@ public:
                       std::string hostname,
                       std::vector<std::string> variables,
                       int port = 30004)
-        : rtde_recv_(std::move(hostname), std::move(variables), port)
+        : rtde_recv_(hostname, variables, port)
         , base_frame_(prefix + base_frame)
         , tool_frame_(prefix + tool_frame)
     {
+        // Joint names corresponding to the names in the ur_description and
+        // ur_e_description ROS packages
         static const std::vector<std::string> base_joint_names = {
             "shoulder_pan_joint",
             "shoulder_lift_joint",
@@ -146,7 +148,7 @@ public:
                         std::string prefix,
                         std::string hostname,
                         int port = 30004)
-        : rtde_ctrl_(std::move(hostname), port)
+        : rtde_ctrl_(hostname, port)
         , servo_timeout_duration_(100ms)
         , base_frame_(prefix + base_frame)
         , state_(IDLE)
@@ -159,11 +161,13 @@ public:
         // correct for that here
         auto ur_step_time = rtde_ctrl_.getStepTime();
 
-        if (ur_step_time == 0.0) {
-            ROS_WARN("UR returned step time 0, defaulting to %.2f ms (%.2f Hz)", getStepTime() * 1000, 1.0 / getStepTime());
-        } else {
+        if (ur_step_time == 0.0)
+            ROS_WARN("'%s' returned step time 0, defaulting to %.2f ms (%.2f Hz)",
+                     hostname.c_str(),
+                     getStepTime() * 1000,
+                     1.0 / getStepTime());
+        else
             setLoopRate(1.0 / ur_step_time);
-        }
     }
 
     ~Controller()
