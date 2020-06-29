@@ -3,7 +3,7 @@ project(ur_control)
 
 find_package(catkin REQUIRED COMPONENTS roscpp geometry_msgs sensor_msgs ursurg_common ursurg_msgs)
 find_package(Eigen3 REQUIRED)
-find_package(ur_rtde 1.2.1 REQUIRED)
+find_package(ur_rtde 1.2.3 REQUIRED)
 
 catkin_package()
 
