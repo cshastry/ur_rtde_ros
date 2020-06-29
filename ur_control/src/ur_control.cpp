@@ -22,6 +22,9 @@
 
 using namespace std::chrono_literals;
 
+using secondsf = std::chrono::duration<double>;
+using millisecondsf = std::chrono::duration<double, std::milli>;
+
 geometry_msgs::Pose convertPose(std::vector<double> pose)
 {
     assert(pose.size() == 6);
@@ -203,7 +206,7 @@ public:
 
     double getStepTime() const
     {
-        return std::chrono::duration<double>(rate_.expected_cycle_time()).count();
+        return secondsf(rate_.expected_cycle_time()).count();
     }
 
     void moveJ(const sensor_msgs::JointState& m)
@@ -238,11 +241,16 @@ public:
             }
 
             // ur_rtde servoJ is non-blocking
-            if (!rtde_ctrl_.servoJ(q, 0.0, 0.0, getStepTime(), servoj_lookahead_time_, servoj_gain_))
+            if (!rtde_ctrl_.servoJ(q,                      // desired joint angles
+                                   0,                      // speed (not used)
+                                   0,                      // acceleration (not used)
+                                   getStepTime(),          // control time (function blocks for this time)
+                                   servoj_lookahead_time_, // look-ahead time in [0.03,0.2]
+                                   servoj_gain_))          // P gain in [100,2000]
                 ROS_WARN("ServoJ command failed");
 
             if (!rate_.sleep())
-                ROS_WARN_THROTTLE(1, "ServoJ loop rate not met");
+                ROS_WARN("ServoJ loop rate not met (actual cycle time was %f ms) ", millisecondsf(rate_.actual_cycle_time()).count());
         });
     }
 
@@ -347,7 +355,7 @@ private:
 
 private:
     ur_rtde::RTDEControlInterface rtde_ctrl_;
-    std::chrono::duration<double> servo_timeout_duration_;
+    secondsf servo_timeout_duration_;
     std::string base_frame_;
     std::atomic<State> state_;
     std::atomic<bool> cmd_proc_stopped_;
