@@ -1,7 +1,14 @@
 cmake_minimum_required(VERSION 3.1)
 project(ur_control)
 
-find_package(catkin REQUIRED COMPONENTS roscpp geometry_msgs sensor_msgs ursurg_common ursurg_msgs)
+find_package(catkin REQUIRED
+  COMPONENTS
+    roscpp
+    geometry_msgs
+    sensor_msgs
+    ursurg_common
+    ur_control_msgs
+)
 find_package(Eigen3 REQUIRED)
 find_package(ur_rtde 1.2.3 REQUIRED)
 

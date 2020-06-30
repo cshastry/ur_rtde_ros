@@ -3,10 +3,14 @@
 #include <ursurg_common/conversions/eigen.h>
 #include <ursurg_common/realtime.h>
 
+#include <ur_control_msgs/SetServoJGain.h>
+#include <ur_control_msgs/SetServoJLookaheadTime.h>
+#include <ur_control_msgs/SetServoLoopRate.h>
+#include <ur_control_msgs/SetTeachModeEnabled.h>
+
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <sensor_msgs/JointState.h>
-#include <ursurg_msgs/SetFloat64.h>
 
 #include <ur_rtde/rtde_control_interface.h>
 #include <ur_rtde/rtde_receive_interface.h>
@@ -284,27 +288,42 @@ public:
         });
     }
 
-    bool setServoLoopRate(ursurg_msgs::SetFloat64::Request& req,
-                          ursurg_msgs::SetFloat64::Response&)
+    bool setServoLoopRate(ur_control_msgs::SetServoLoopRate::Request& req,
+                          ur_control_msgs::SetServoLoopRate::Response&)
     {
         if (state_ != IDLE)
             return false;
 
-        setLoopRate(req.value);
+        setLoopRate(req.frequency);
         return true;
     }
 
-    bool setServoJLookaheadTime(ursurg_msgs::SetFloat64::Request& req,
-                                ursurg_msgs::SetFloat64::Response&)
+    bool setServoJLookaheadTime(ur_control_msgs::SetServoJLookaheadTime::Request& req,
+                                ur_control_msgs::SetServoJLookaheadTime::Response&)
     {
-        servoj_lookahead_time_ = req.value;
+        servoj_lookahead_time_ = req.lookahead_time;
         return true;
     }
 
-    bool setServoJGain(ursurg_msgs::SetFloat64::Request& req,
-                       ursurg_msgs::SetFloat64::Response&)
+    bool setServoJGain(ur_control_msgs::SetServoJGain::Request& req,
+                       ur_control_msgs::SetServoJGain::Response&)
     {
-        servoj_gain_ = req.value;
+        servoj_gain_ = req.gain;
+        return true;
+    }
+
+
+    bool setTeachModeEnabled(ur_control_msgs::SetTeachModeEnabled::Request& req,
+                             ur_control_msgs::SetTeachModeEnabled::Response&)
+    {
+        if (state_ != IDLE)
+            return false;
+
+        if (req.enable)
+            rtde_ctrl_.teachMode();
+        else
+            rtde_ctrl_.endTeachMode();
+
         return true;
     }
 
@@ -415,6 +434,7 @@ int main(int argc, char* argv[])
         nh.advertiseService("set_servo_loop_rate", &Controller::setServoLoopRate, &controller),
         nh.advertiseService("set_servo_joint_lookahead_time", &Controller::setServoJLookaheadTime, &controller),
         nh.advertiseService("set_servo_joint_gain", &Controller::setServoJGain, &controller),
+        nh.advertiseService("set_teach_mode_enabled", &Controller::setTeachModeEnabled, &controller),
     };
 
     std::list<ros::Subscriber> subscribers{
