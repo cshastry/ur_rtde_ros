@@ -316,12 +316,19 @@ public:
 
     void setTeachModeEnabled(const std_msgs::Bool& msg)
     {
-        if (msg.data && state_ == IDLE) {
-            rtde_ctrl_.teachMode();
-            state_ = FREEDRIVE;
-        } else if (!msg.data && state_ == FREEDRIVE) {
-            rtde_ctrl_.endTeachMode();
-            state_ = IDLE;
+        if (state_ != IDLE)
+            return;
+
+        if (msg.data) {
+            if (state_ != FREEDRIVE) {
+                rtde_ctrl_.teachMode();
+                state_ = FREEDRIVE;
+            }
+        } else {
+            if (state_ == FREEDRIVE) {
+                rtde_ctrl_.endTeachMode();
+                state_ = IDLE;
+            }
         }
     }
 
