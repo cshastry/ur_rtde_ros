@@ -11,6 +11,7 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <sensor_msgs/JointState.h>
+#include <std_msgs/Bool.h>
 
 #include <ur_rtde/rtde_control_interface.h>
 #include <ur_rtde/rtde_receive_interface.h>
@@ -143,6 +144,7 @@ class Controller
     enum State
     {
         IDLE,
+        FREEDRIVE,
         MOVING,
         SERVOING,
     };
@@ -312,19 +314,15 @@ public:
         return true;
     }
 
-
-    bool setTeachModeEnabled(ur_control_msgs::SetTeachModeEnabled::Request& req,
-                             ur_control_msgs::SetTeachModeEnabled::Response&)
+    void setTeachModeEnabled(const std_msgs::Bool& msg)
     {
-        if (state_ != IDLE)
-            return false;
-
-        if (req.enable)
+        if (msg.data && state_ == IDLE) {
             rtde_ctrl_.teachMode();
-        else
+            state_ = FREEDRIVE;
+        } else if (!msg.data && state_ == FREEDRIVE) {
             rtde_ctrl_.endTeachMode();
-
-        return true;
+            state_ = IDLE;
+        }
     }
 
 private:
@@ -434,13 +432,13 @@ int main(int argc, char* argv[])
         nh.advertiseService("set_servo_loop_rate", &Controller::setServoLoopRate, &controller),
         nh.advertiseService("set_servo_joint_lookahead_time", &Controller::setServoJLookaheadTime, &controller),
         nh.advertiseService("set_servo_joint_gain", &Controller::setServoJGain, &controller),
-        nh.advertiseService("set_teach_mode_enabled", &Controller::setTeachModeEnabled, &controller),
     };
 
     std::list<ros::Subscriber> subscribers{
         nh.subscribe("move_joint", 2, &Controller::moveJ, &controller, ros::TransportHints().tcpNoDelay()),
         nh.subscribe("move_tool_linear", 2, &Controller::moveL, &controller, ros::TransportHints().tcpNoDelay()),
         nh.subscribe("servo_joint", 8, &Controller::servoJ, &controller, ros::TransportHints().tcpNoDelay()),
+        nh.subscribe("teach_mode_enable", 4, &Controller::setTeachModeEnabled, &controller, ros::TransportHints().tcpNoDelay()),
     };
 
     // Schedule timer to publish robot state
