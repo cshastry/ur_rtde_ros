@@ -316,20 +316,12 @@ public:
 
     void setTeachModeEnabled(const std_msgs::Bool& msg)
     {
-        ROS_INFO_STREAM(msg);
-
-        if (msg.data) {
-            if (state_ == IDLE) {
-                rtde_ctrl_.teachMode();
-                state_ = FREEDRIVE;
-                ROS_INFO_STREAM("Freedrive start");
-            }
-        } else {
-            if (state_ == FREEDRIVE) {
-                rtde_ctrl_.endTeachMode();
-                state_ = IDLE;
-                ROS_INFO_STREAM("Freedrive end");
-            }
+        if (msg.data && state_ == IDLE) {
+            rtde_ctrl_.teachMode();
+            state_ = FREEDRIVE;
+        } else if (!msg.data && state_ == FREEDRIVE) {
+            rtde_ctrl_.endTeachMode();
+            state_ = IDLE;
         }
     }
 
