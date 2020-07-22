@@ -260,7 +260,9 @@ public:
                 ROS_WARN("ServoJ command failed");
 
             if (!rate_.sleep())
-                ROS_WARN("ServoJ loop rate not met (actual cycle time was %f ms) ", millisecondsf(rate_.actual_cycle_time()).count());
+                ROS_WARN_THROTTLE(0.5, "ServoJ cycle time overstepped (desired: %f ms, actual: %f ms)",
+                    millisecondsf(rate_.expected_cycle_time()).count(),
+                    millisecondsf(rate_.actual_cycle_time()).count());
         });
     }
 
