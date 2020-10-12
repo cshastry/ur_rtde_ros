@@ -165,9 +165,9 @@ public:
     {
         // It seems getStepTime() returns zero for simulated UR robots, so we
         // correct for that here
-        auto ur_step_time = rtde_ctrl_.getStepTime();
+        auto ur_step_time = ros::param::param<int>("~servo_rate", rtde_ctrl_.getStepTime());
 
-        if (ur_step_time == 0.0)
+        if (ur_step_time == 0)
             ROS_WARN("'%s' returned step time 0, defaulting to %.2f ms (%.2f Hz)",
                      hostname.c_str(),
                      getStepTime() * 1000,
@@ -254,13 +254,13 @@ public:
             if (!rtde_ctrl_.servoJ(q,                      // desired joint angles
                                    0,                      // speed (not used)
                                    0,                      // acceleration (not used)
-                                   getStepTime(),          // control time (function blocks for this time)
+                                   getStepTime(),          // control time
                                    servoj_lookahead_time_, // look-ahead time in [0.03,0.2]
                                    servoj_gain_))          // P gain in [100,2000]
                 ROS_WARN("ServoJ command failed");
 
             if (!rate_.sleep())
-                ROS_WARN_THROTTLE(0.5, "ServoJ cycle time overstepped (desired: %f ms, actual: %f ms)",
+                ROS_WARN_THROTTLE(0.5, "ServoJ cycle time overstepped (desired: %.2f ms, actual: %.2f ms)",
                     millisecondsf(rate_.expected_cycle_time()).count(),
                     millisecondsf(rate_.actual_cycle_time()).count());
         });
@@ -290,16 +290,6 @@ public:
 
             state_ = IDLE;
         });
-    }
-
-    bool setServoLoopRate(ur_control_msgs::SetServoLoopRate::Request& req,
-                          ur_control_msgs::SetServoLoopRate::Response&)
-    {
-        if (state_ != IDLE)
-            return false;
-
-        setLoopRate(req.frequency);
-        return true;
     }
 
     bool setServoJLookaheadTime(ur_control_msgs::SetServoJLookaheadTime::Request& req,
@@ -333,7 +323,7 @@ private:
     {
         {
             std::lock_guard<std::mutex> lock(cmd_queue_mtx_);
-            cmd_queue_.emplace(std::forward<Callable>(f));
+            cmd_queue_.push(std::move(f));
         }
 
         cmd_cv_.notify_one();
@@ -431,7 +421,6 @@ int main(int argc, char* argv[])
     auto pub_tcp_twist = (publish_tcp_twist) ? nh.advertise<geometry_msgs::TwistStamped>("tcp_twist_current", 1) : ros::Publisher{};
 
     std::list<ros::ServiceServer> service_servers{
-        nh.advertiseService("set_servo_loop_rate", &Controller::setServoLoopRate, &controller),
         nh.advertiseService("set_servo_joint_lookahead_time", &Controller::setServoJLookaheadTime, &controller),
         nh.advertiseService("set_servo_joint_gain", &Controller::setServoJGain, &controller),
     };
@@ -439,8 +428,8 @@ int main(int argc, char* argv[])
     std::list<ros::Subscriber> subscribers{
         nh.subscribe("move_joint", 2, &Controller::moveJ, &controller, ros::TransportHints().tcpNoDelay()),
         nh.subscribe("move_tool_linear", 2, &Controller::moveL, &controller, ros::TransportHints().tcpNoDelay()),
-        nh.subscribe("servo_joint", 8, &Controller::servoJ, &controller, ros::TransportHints().tcpNoDelay()),
-        nh.subscribe("teach_mode_enable", 4, &Controller::setTeachModeEnabled, &controller, ros::TransportHints().tcpNoDelay()),
+        nh.subscribe("servo_joint", 1, &Controller::servoJ, &controller, ros::TransportHints().tcpNoDelay()),
+        nh.subscribe("teach_mode_enable", 10, &Controller::setTeachModeEnabled, &controller, ros::TransportHints().tcpNoDelay()),
     };
 
     // Schedule timer to publish robot state
