@@ -163,17 +163,21 @@ public:
         , servoj_lookahead_time_(0.1)
         , servoj_gain_(300)
     {
-        // It seems getStepTime() returns zero for simulated UR robots, so we
-        // correct for that here
-        auto ur_step_time = ros::param::param<int>("~servo_rate", rtde_ctrl_.getStepTime());
+        if (ros::param::has("~servo_rate")) {
+            setLoopRate(ros::param::param<double>("~servo_rate", getStepTime()));
+        } else {
+            auto ur_step_time = rtde_ctrl_.getStepTime();
 
-        if (ur_step_time == 0)
-            ROS_WARN("'%s' returned step time 0, defaulting to %.2f ms (%.2f Hz)",
-                     hostname.c_str(),
-                     getStepTime() * 1000,
-                     1.0 / getStepTime());
-        else
-            setLoopRate(1.0 / ur_step_time);
+            // It seems RTDEControlInterface::getStepTime() returns zero for
+            // simulated UR robots, so we correct for that here
+            if (ur_step_time == 0)
+                ROS_WARN("'%s' returned step time 0, defaulting to %.2f ms (%.2f Hz)",
+                         hostname.c_str(),
+                         getStepTime() * 1000,
+                         1.0 / getStepTime());
+            else
+                setLoopRate(1.0 / ur_step_time);
+        }
     }
 
     ~Controller()
