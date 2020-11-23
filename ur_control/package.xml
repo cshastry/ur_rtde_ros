@@ -11,8 +11,6 @@
 
   <build_depend>eigen</build_depend>
 
-  <depend>ur_rtde</depend>
-
   <depend>roscpp</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
