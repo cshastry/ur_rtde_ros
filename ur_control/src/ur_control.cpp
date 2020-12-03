@@ -264,9 +264,7 @@ public:
                 ROS_WARN("ServoJ command failed");
 
             if (!rate_.sleep())
-                ROS_WARN_THROTTLE(0.5, "ServoJ cycle time overstepped (desired: %.2f ms, actual: %.2f ms)",
-                    millisecondsf(rate_.expected_cycle_time()).count(),
-                    millisecondsf(rate_.actual_cycle_time()).count());
+                ROS_WARN_THROTTLE(0.5, "ServoJ cycle time overstepped (expected: %.2f ms, actual: %.2f ms)", millisecondsf(rate_.expected_cycle_time()).count(), millisecondsf(rate_.actual_cycle_time()).count());
         });
     }
 
@@ -430,23 +428,24 @@ int main(int argc, char* argv[])
     };
 
     std::list<ros::Subscriber> subscribers{
-        nh.subscribe("move_joint", 2, &Controller::moveJ, &controller, ros::TransportHints().tcpNoDelay()),
-        nh.subscribe("move_tool_linear", 2, &Controller::moveL, &controller, ros::TransportHints().tcpNoDelay()),
-        nh.subscribe("servo_joint", 1, &Controller::servoJ, &controller, ros::TransportHints().tcpNoDelay()),
-        nh.subscribe("teach_mode_enable", 10, &Controller::setTeachModeEnabled, &controller, ros::TransportHints().tcpNoDelay()),
+        nh.subscribe("move_joint", 2, &Controller::moveJ, &controller, ros::TransportHints().tcp().tcpNoDelay()),
+        nh.subscribe("move_tool_linear", 2, &Controller::moveL, &controller, ros::TransportHints().tcp().tcpNoDelay()),
+        nh.subscribe("servo_joint", 1, &Controller::servoJ, &controller, ros::TransportHints().udp()),
+        nh.subscribe("teach_mode_enable", 10, &Controller::setTeachModeEnabled, &controller, ros::TransportHints().tcp().tcpNoDelay()),
     };
 
     // Schedule timer to publish robot state
-    auto timer = nh.createSteadyTimer(ros::WallDuration(controller.getStepTime()),
-                                      [&](const auto&) {
-                                          pub_joint_state.publish(receiver.getJointStateMsg());
+    auto timer = nh.createSteadyTimer(
+        ros::WallDuration(controller.getStepTime()),
+        [&](const auto&) {
+            pub_joint_state.publish(receiver.getJointStateMsg());
 
-                                          if (publish_tcp_pose)
-                                              pub_tcp_pose.publish(receiver.getActualTCPPoseMsg());
+            if (publish_tcp_pose)
+                pub_tcp_pose.publish(receiver.getActualTCPPoseMsg());
 
-                                          if (publish_tcp_twist)
-                                              pub_tcp_pose.publish(receiver.getActualTCPTwistMsg());
-                                      });
+            if (publish_tcp_twist)
+                pub_tcp_pose.publish(receiver.getActualTCPTwistMsg());
+        });
 
     controller.start();
     ros::spin();
