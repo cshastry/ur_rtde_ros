@@ -25,6 +25,8 @@
 #include <queue>
 #include <thread>
 
+#define DEFAULT_CONTROL_RATE 125.0
+
 using namespace std::chrono_literals;
 
 using secondsf = std::chrono::duration<double>;
@@ -155,11 +157,10 @@ public:
                         std::string hostname,
                         int port = 30004)
         : rtde_ctrl_(hostname, port)
-        , servo_timeout_duration_(100ms)
         , base_frame_(prefix + base_frame)
         , state_(IDLE)
         , cmd_proc_stopped_(true)
-        , rate_(125)
+        , rate_(DEFAULT_CONTROL_RATE)
         , servoj_lookahead_time_(0.1)
         , servoj_gain_(300)
     {
@@ -340,7 +341,7 @@ private:
             // Wait for queue to be non-empty or stop, but time out after the
             // given period of time
             bool timeout = !cmd_cv_.wait_for(lock,
-                                             servo_timeout_duration_,
+                                             10 * rate_.expected_cycle_time(), // ten times the servo loop period
                                              [this]() { return !cmd_queue_.empty() || cmd_proc_stopped_; });
 
             if (cmd_proc_stopped_)
@@ -370,7 +371,6 @@ private:
 
 private:
     ur_rtde::RTDEControlInterface rtde_ctrl_;
-    secondsf servo_timeout_duration_;
     std::string base_frame_;
     std::atomic<State> state_;
     std::atomic<bool> cmd_proc_stopped_;
@@ -430,7 +430,7 @@ int main(int argc, char* argv[])
     std::list<ros::Subscriber> subscribers{
         nh.subscribe("move_joint", 2, &Controller::moveJ, &controller, ros::TransportHints().tcp().tcpNoDelay()),
         nh.subscribe("move_tool_linear", 2, &Controller::moveL, &controller, ros::TransportHints().tcp().tcpNoDelay()),
-        nh.subscribe("servo_joint", 1, &Controller::servoJ, &controller, ros::TransportHints().udp()),
+        nh.subscribe("servo_joint", 1, &Controller::servoJ, &controller, ros::TransportHints().udp().tcp().tcpNoDelay()),
         nh.subscribe("teach_mode_enable", 10, &Controller::setTeachModeEnabled, &controller, ros::TransportHints().tcp().tcpNoDelay()),
     };
 
