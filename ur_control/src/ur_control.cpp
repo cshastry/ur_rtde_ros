@@ -26,6 +26,8 @@
 #include <thread>
 
 #define DEFAULT_CONTROL_RATE 125.0
+#define DEFAULT_SERVOJ_LOOKAHEAD_TIME 0.1
+#define DEFAULT_SERVOJ_GAIN 300.0
 
 using namespace std::chrono_literals;
 
@@ -73,11 +75,11 @@ std::vector<double> convertTwist(const geometry_msgs::Twist& m)
 class Receiver
 {
 public:
-    explicit Receiver(std::string base_frame,
-                      std::string tool_frame,
-                      std::string prefix,
-                      std::string hostname,
-                      std::vector<std::string> variables,
+    explicit Receiver(const std::string& base_frame,
+                      const std::string& tool_frame,
+                      const std::string& prefix,
+                      const std::string& hostname,
+                      const std::vector<std::string>& variables,
                       int port = 30004)
         : rtde_recv_(hostname, variables, port)
         , base_frame_(prefix + base_frame)
@@ -94,8 +96,10 @@ public:
             "wrist_3_joint",
         };
 
-        for (const auto& n : base_joint_names)
-            joint_names_.push_back(prefix + n);
+        std::transform(base_joint_names.begin(),
+                       base_joint_names.end(),
+                       std::back_inserter(joint_names_),
+                       [&](const auto& n) { return prefix + n; });
     }
 
     sensor_msgs::JointState getJointStateMsg()
@@ -152,17 +156,17 @@ class Controller
     };
 
 public:
-    explicit Controller(std::string base_frame,
-                        std::string prefix,
-                        std::string hostname,
+    explicit Controller(const std::string& base_frame,
+                        const std::string& prefix,
+                        const std::string& hostname,
                         int port = 30004)
         : rtde_ctrl_(hostname, port)
         , base_frame_(prefix + base_frame)
         , state_(IDLE)
         , cmd_proc_stopped_(true)
         , rate_(DEFAULT_CONTROL_RATE)
-        , servoj_lookahead_time_(0.1)
-        , servoj_gain_(300)
+        , servoj_lookahead_time_(DEFAULT_SERVOJ_LOOKAHEAD_TIME)
+        , servoj_gain_(DEFAULT_SERVOJ_GAIN)
     {
         if (ros::param::has("~servo_rate")) {
             setLoopRate(ros::param::param<double>("~servo_rate", getStepTime()));
@@ -183,34 +187,20 @@ public:
 
     ~Controller()
     {
-        stop();
         rtde_ctrl_.stopScript();
     }
 
-    void start()
+    void run()
     {
-        if (thread_.joinable()) {
-            ROS_WARN("Servo loop already running?");
-            return;
-        }
 
         cmd_proc_stopped_ = false;
-        thread_ = std::thread([this]() { processCommands(); });
-
-        // Set realtime priority for controller thread
-        //try {
-        //    thread_set_sched_fifo_with_priority(thread_.native_handle(), 80);
-        //} catch (const std::runtime_error& e) {
-        //    ROS_WARN_STREAM("Setting realtime thread priority failed: " << e.what());
-        //}
+        processCommands();
     }
 
     void stop()
     {
         cmd_proc_stopped_ = true;
-
-        if (thread_.joinable())
-            thread_.join();
+        cmd_cv_.notify_all();
     }
 
     void setLoopRate(double f)
@@ -342,7 +332,7 @@ private:
             // given period of time
             bool timeout = !cmd_cv_.wait_for(lock,
                                              10 * rate_.expected_cycle_time(), // ten times the servo loop period
-                                             [this]() { return !cmd_queue_.empty() || cmd_proc_stopped_; });
+                                             [this] { return !cmd_queue_.empty() || cmd_proc_stopped_; });
 
             if (cmd_proc_stopped_)
                 break;
@@ -387,12 +377,12 @@ int main(int argc, char* argv[])
 {
     using namespace std::string_literals;
 
-    // Lock memory and handle page faults for better realtime performance
-    //try {
-    //    lock_and_prefault_mem(32 * 1024 * 1024);
-    //} catch (const std::runtime_error& e) {
-    //    std::cerr << "Lock/prefault memory failed: " << e.what() << std::endl;
-    //}
+    // Lock memory and handle page faults immediately for improved realtime performance
+    try {
+        lock_and_prefault_mem(32 * 1024 * 1024);
+    } catch (const std::runtime_error& e) {
+        std::cerr << "Lock/prefault memory failed: " << e.what() << std::endl;
+    }
 
     ros::init(argc, argv, "ur_control");
     ros::NodeHandle nh;
@@ -447,9 +437,20 @@ int main(int argc, char* argv[])
                 pub_tcp_pose.publish(receiver.getActualTCPTwistMsg());
         });
 
-    controller.start();
+    auto thread_control = std::thread([&controller] {
+        // Set realtime priority for this thread
+        try {
+            thread_set_sched_fifo_with_priority(pthread_self(), 80);
+        } catch (const std::runtime_error& e) {
+            ROS_WARN_STREAM("Setting realtime thread priority failed: " << e.what());
+        }
+
+        controller.run();
+    });
+
     ros::spin();
     controller.stop();
+    thread_control.join();
 
     return EXIT_SUCCESS;
 }
