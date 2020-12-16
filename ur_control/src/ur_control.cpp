@@ -34,7 +34,7 @@ using namespace std::chrono_literals;
 using secondsf = std::chrono::duration<double>;
 using millisecondsf = std::chrono::duration<double, std::milli>;
 
-geometry_msgs::Pose convertPose(std::vector<double> pose)
+geometry_msgs::Pose convertPose(const std::vector<double>& pose)
 {
     assert(pose.size() == 6);
     Eigen::Vector3d p(pose[0], pose[1], pose[2]); // position
