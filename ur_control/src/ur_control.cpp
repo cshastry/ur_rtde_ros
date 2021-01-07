@@ -378,11 +378,11 @@ int main(int argc, char* argv[])
     using namespace std::string_literals;
 
     // Lock memory and handle page faults immediately for improved realtime performance
-    try {
-        lock_and_prefault_mem(32 * 1024 * 1024);
-    } catch (const std::runtime_error& e) {
-        std::cerr << "Lock/prefault memory failed: " << e.what() << std::endl;
-    }
+    //try {
+    //    lock_and_prefault_mem(32 * 1024 * 1024);
+    //} catch (const std::runtime_error& e) {
+    //    std::cerr << "Lock/prefault memory failed: " << e.what() << std::endl;
+    //}
 
     ros::init(argc, argv, "ur_control");
     ros::NodeHandle nh;
@@ -439,11 +439,11 @@ int main(int argc, char* argv[])
 
     auto thread_control = std::thread([&controller] {
         // Set realtime priority for this thread
-        try {
-            thread_set_sched_fifo_with_priority(pthread_self(), 80);
-        } catch (const std::runtime_error& e) {
-            ROS_WARN_STREAM("Setting realtime thread priority failed: " << e.what());
-        }
+        //try {
+        //    thread_set_sched_fifo_with_priority(pthread_self(), 80);
+        //} catch (const std::runtime_error& e) {
+        //    ROS_WARN_STREAM("Setting realtime thread priority failed: " << e.what());
+        //}
 
         controller.run();
     });
