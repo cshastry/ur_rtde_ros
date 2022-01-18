@@ -79,9 +79,8 @@ public:
                       const std::string& tool_frame,
                       const std::string& prefix,
                       const std::string& hostname,
-                      const std::vector<std::string>& variables,
-                      int port = 30004)
-        : rtde_recv_(hostname, variables, port)
+                      const std::vector<std::string>& variables)
+        : rtde_recv_(hostname, -1, variables)
         , base_frame_(prefix + base_frame)
         , tool_frame_(prefix + tool_frame)
     {
@@ -158,9 +157,8 @@ class Controller
 public:
     explicit Controller(const std::string& base_frame,
                         const std::string& prefix,
-                        const std::string& hostname,
-                        int port = 30004)
-        : rtde_ctrl_(hostname, port)
+                        const std::string& hostname)
+        : rtde_ctrl_(hostname)
         , base_frame_(prefix + base_frame)
         , state_(IDLE)
         , cmd_proc_stopped_(true)
@@ -392,7 +390,6 @@ int main(int argc, char* argv[])
     auto publish_tcp_twist = nh_priv.param("publish_tcp_twist", false);
     auto prefix = nh_priv.param("prefix", ""s);
     auto hostname = nh_priv.param("hostname", ""s);
-    auto port = nh_priv.param("port", 30004);
 
     if (hostname.empty())
         throw std::runtime_error("The ~hostname parameter is not set");
@@ -405,8 +402,8 @@ int main(int argc, char* argv[])
     if (publish_tcp_twist)
         rtde_output_variables.push_back("actual_TCP_speed");
 
-    Receiver receiver("base_link", "ee_link", prefix, hostname, rtde_output_variables, port);
-    Controller controller("base_link", prefix, hostname, port);
+    Receiver receiver("base_link", "ee_link", prefix, hostname, rtde_output_variables);
+    Controller controller("base_link", prefix, hostname);
 
     auto pub_joint_state = nh.advertise<sensor_msgs::JointState>("joint_states", 1);
     auto pub_tcp_pose = (publish_tcp_pose) ? nh.advertise<geometry_msgs::PoseStamped>("tcp_pose_current", 1) : ros::Publisher{};
