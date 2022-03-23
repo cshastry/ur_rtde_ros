@@ -6,7 +6,6 @@ find_package(catkin REQUIRED
     roscpp
     geometry_msgs
     sensor_msgs
-    ursurg_common
     ur_control_msgs
 )
 find_package(Boost REQUIRED COMPONENTS system thread)
