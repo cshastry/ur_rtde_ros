@@ -10,7 +10,7 @@ find_package(catkin REQUIRED
 )
 find_package(Boost REQUIRED COMPONENTS system thread)
 find_package(Eigen3 REQUIRED)
-find_package(ur_rtde 1.3.2 REQUIRED)
+find_package(ur_rtde 1.4.9 REQUIRED)
 
 catkin_package()
 
