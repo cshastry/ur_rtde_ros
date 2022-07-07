@@ -1,37 +1,16 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.8)
 project(ur_control_msgs)
 
-find_package(catkin REQUIRED COMPONENTS
-  # actionlib
-  message_generation
-  # std_msgs
+find_package(ament_cmake REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "srv/SetServoJGain.srv"
+  "srv/SetServoJLookaheadTime.srv"
+  "srv/SetServoLoopRate.srv"
+  "srv/SetTeachModeEnabled.srv"
 )
 
-# add_message_files(
-#   DIRECTORY msg
-#   FILES
-#     x.msg
-# )
+ament_export_dependencies(rosidl_default_runtime)
 
-add_service_files(
-  DIRECTORY srv
-  FILES
-    SetServoJGain.srv
-    SetServoJLookaheadTime.srv
-    SetServoLoopRate.srv
-    SetTeachModeEnabled.srv
-)
-
-# add_action_files(
-#   DIRECTORY action
-#   FILES
-#     x.action
-# )
-
-generate_messages(
-  # DEPENDENCIES std_msgs
-)
-
-catkin_package(
-  CATKIN_DEPENDS message_runtime
-)
+ament_package()
