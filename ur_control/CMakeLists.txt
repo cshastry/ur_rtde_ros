@@ -1,35 +1,26 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.8)
 project(ur_control)
-
-find_package(catkin REQUIRED
-  COMPONENTS
-    roscpp
-    geometry_msgs
-    sensor_msgs
-    ur_control_msgs
-)
-find_package(Boost REQUIRED COMPONENTS system thread)
-find_package(Eigen3 REQUIRED)
-find_package(ur_rtde 1.4.9 REQUIRED)
-
-catkin_package()
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
 
-if((CMAKE_CXX_COMPILER_ID MATCHES "Clang") OR (CMAKE_CXX_COMPILER_ID MATCHES "GNU"))
-  add_compile_options(-Wall -Wextra)
-endif()
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(ur_control_msgs REQUIRED)
+find_package(Boost REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(ur_rtde 1.5.2 REQUIRED)
 
-include_directories(${catkin_INCLUDE_DIRS})
+add_executable(ur_control src/ur_control.cpp)
+target_compile_options(ur_control PRIVATE -Wall -Wextra)
+ament_target_dependencies(ur_control rclcpp geometry_msgs sensor_msgs ur_control_msgs)
+target_link_libraries(ur_control Boost::boost Eigen3::Eigen ur_rtde::rtde)
 
-add_executable(ur_control
-  src/ur_control.cpp
-  src/monotonic.cpp
+install(
+  TARGETS ur_control
+  DESTINATION lib/${PROJECT_NAME}
 )
 
-target_link_libraries(ur_control
-  Eigen3::Eigen
-  ur_rtde::rtde
-  ${catkin_LIBRARIES}
-)
+ament_package()
