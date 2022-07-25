@@ -203,6 +203,8 @@ public:
             [this](const sensor_msgs::msg::JointState::UniquePtr m){ servo_joint(*m); });
         sub_move_joint_ = create_subscription<sensor_msgs::msg::JointState>("move_joint", 10,
             [this](const sensor_msgs::msg::JointState::UniquePtr m){ move_joint(*m); });
+        sub_speed_joint_ = create_subscription<sensor_msgs::msg::JointState>("speed_joint", 10,
+            [this](const sensor_msgs::msg::JointState::UniquePtr m){ speed_joint(*m); });
         sub_move_linear_ = create_subscription<geometry_msgs::msg::PoseStamped>("move_linear", 10,
             [this](const geometry_msgs::msg::PoseStamped::UniquePtr m){ move_linear(*m); });
         sub_teach_mode_enable_ = create_subscription<std_msgs::msg::Bool>("teach_mode_enable", 10,
@@ -404,6 +406,7 @@ private:
     rclcpp::WallRate::UniquePtr rate_;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr sub_servo_joint_;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr sub_move_joint_;
+    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr sub_speed_joint_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr sub_move_linear_;
     rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_teach_mode_enable_;
     std::thread thread_;
