@@ -75,17 +75,17 @@ public:
     explicit URReceiverNode()
         : rclcpp::Node("ur_receiver")
     {
-        publish_tcp_pose_ = declare_parameter<bool>("publish_tcp_pose", true);
-        publish_tcp_twist_ = declare_parameter<bool>("publish_tcp_pose", true);
+        bool publish_tcp_pose = declare_parameter<bool>("publish_tcp_pose", true);
+        bool publish_tcp_twist = declare_parameter<bool>("publish_tcp_pose", true);
         auto hostname = declare_parameter<std::string>("hostname", "");
         auto prefix = declare_parameter<std::string>("prefix", "");
 
         std::vector<std::string> vars = {"actual_q", "actual_qd", "actual_current"};
 
-        if (publish_tcp_pose_)
+        if (publish_tcp_pose)
             vars.push_back("actual_TCP_pose");
 
-        if (publish_tcp_twist_)
+        if (publish_tcp_twist)
             vars.push_back("actual_TCP_speed");
 
         rtde_recv_ = std::make_unique<ur_rtde::RTDEReceiveInterface>(hostname, -1, vars);
@@ -109,10 +109,10 @@ public:
 
         pub_joints_ = create_publisher<sensor_msgs::msg::JointState>("joint_states", rclcpp::SensorDataQoS());
 
-        if (publish_tcp_pose_)
+        if (publish_tcp_pose)
             pub_pose_ = create_publisher<geometry_msgs::msg::PoseStamped>("tcp_pose_current", rclcpp::SensorDataQoS());
 
-        if (publish_tcp_twist_)
+        if (publish_tcp_twist)
             pub_twist_ = create_publisher<geometry_msgs::msg::TwistStamped>("tcp_twist_current", rclcpp::SensorDataQoS());
 
         timer_ = create_wall_timer(10ms, [this]() { return publish_state(); }); // Publish state at 100 Hz
@@ -131,7 +131,7 @@ private:
         m_joint_state.effort = rtde_recv_->getActualCurrent();
         pub_joints_->publish(m_joint_state);
 
-        if (publish_tcp_pose_) {
+        if (pub_pose_) {
             geometry_msgs::msg::PoseStamped m_pose(rosidl_runtime_cpp::MessageInitialization::SKIP);
             m_pose.header.stamp = now;
             m_pose.header.frame_id = base_frame_;
@@ -139,7 +139,7 @@ private:
             pub_pose_->publish(m_pose);
         }
 
-        if (publish_tcp_twist_) {
+        if (pub_twist_) {
             geometry_msgs::msg::TwistStamped m_twist(rosidl_runtime_cpp::MessageInitialization::SKIP);
             m_twist.header.stamp = now;
             m_twist.header.frame_id = tool_frame_;
@@ -157,8 +157,6 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pub_pose_;
     rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr pub_twist_;
     rclcpp::TimerBase::SharedPtr timer_;
-    bool publish_tcp_pose_;
-    bool publish_tcp_twist_;
 };
 
 // UR control node.
@@ -176,6 +174,7 @@ class URControllerNode : public rclcpp::Node
         FREEDRIVE,
         MOVING,
         SERVOING,
+        SPEEDING,
     };
 
 public:
@@ -301,6 +300,27 @@ public:
         });
     }
 
+    // Move at constant target velocity in joint space (linear acceleration profile)
+    void speed_joint(const sensor_msgs::msg::JointState& m)
+    {
+        if (state_ != State::READY) {
+            RCLCPP_WARN(get_logger(), "Discarding 'speed_joint' command - not ready!");
+            return;
+        }
+
+        enqueue_command([this, qd = m.velocity]() {
+            if (state_ != State::SPEEDING) {
+                state_ = State::SPEEDING; // cleared if we don't keep receiving speed commands for some time
+            }
+
+            // ur_rtde servoJ is non-blocking
+            if (!rtde_ctrl_->speedJ(qd,  // desired joint velocities
+                                    0.5, // acceleration
+                                    0))  // blocking time for this function call
+                RCLCPP_WARN(get_logger(), "SpeedJ command failed");
+        });
+    }
+
     void set_teach_mode_enabled(const std_msgs::msg::Bool& msg)
     {
         if (msg.data && state_ == State::READY) {
@@ -335,7 +355,7 @@ private:
             // Wait for queue to be non-empty or stop, but time out after the
             // given period of time
             bool timeout = !cmd_cv_.wait_for(lock,
-                                             10 * rate_->period(), // Ten times the servo loop period
+                                             10 * rate_->period(), // TODO Ten times the servo loop period?
                                              [this] { return !cmd_queue_.empty() || cmd_loop_stopped_; });
 
             if (cmd_loop_stopped_)
@@ -346,6 +366,13 @@ private:
                 // messages were received after a period of time)
                 if (state_ == State::SERVOING) {
                     rtde_ctrl_->servoStop();
+                    cmd_queue_.clear();
+                    state_ = State::READY;
+                }
+
+                // Clear SPEEDING state after timeout
+                if (state_ == State::SPEEDING) {
+                    rtde_ctrl_->speedStop();
                     cmd_queue_.clear();
                     state_ = State::READY;
                 }
@@ -361,6 +388,8 @@ private:
 
         if (state_ == State::SERVOING)
             rtde_ctrl_->servoStop();
+        else if (state_ == State::SPEEDING)
+            rtde_ctrl_->speedStop();
 
         state_ = State::READY;
     }
