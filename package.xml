@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>ur_control</name>
+  <name>ur_rtde_ros</name>
   <version>1.0.0</version>
-  <description>The ur_control package.</description>
+  <description>The ur_rtde_ros package.</description>
   <maintainer email="kils@mmmi.sdu.dk">Kim Lindberg Schwaner</maintainer>
   <license>BSD</license>
 
@@ -11,7 +11,6 @@
   <depend>rclcpp</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
-  <depend>ur_control_msgs</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
