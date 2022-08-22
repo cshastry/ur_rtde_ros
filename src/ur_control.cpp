@@ -219,11 +219,10 @@ public:
     {
         cmd_loop_stopped_ = true;
         cmd_cv_.notify_all();
+        thread_.join();
 
         if (rtde_ctrl_)
             rtde_ctrl_->stopScript();
-
-        thread_.join();
     }
 
     // Servo (i.e., small steps, no interpolation) to a target in joint space
@@ -315,11 +314,26 @@ public:
                 state_ = State::SPEEDING; // cleared if we don't keep receiving speed commands for some time
             }
 
-            // ur_rtde servoJ is non-blocking
-            if (!rtde_ctrl_->speedJ(qd,  // desired joint velocities
-                                    0.5, // acceleration
-                                    0))  // blocking time for this function call
+            if (!rtde_ctrl_->speedJ(qd))
                 RCLCPP_WARN(get_logger(), "SpeedJ command failed");
+        });
+    }
+
+    // Move at constant target velocity in tool space (linear acceleration profile)
+    void speed_linear(const geometry_msgs::msg::TwistStamped& m)
+    {
+        if (state_ != State::READY) {
+            RCLCPP_WARN(get_logger(), "Discarding 'speed_joint' command - not ready!");
+            return;
+        }
+
+        enqueue_command([this, xd = convert_twist(m.twist)]() {
+            if (state_ != State::SPEEDING) {
+                state_ = State::SPEEDING; // cleared if we don't keep receiving speed commands for some time
+            }
+
+            if (!rtde_ctrl_->speedL(xd))
+                RCLCPP_WARN(get_logger(), "SpeedL command failed");
         });
     }
 
