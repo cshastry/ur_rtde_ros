@@ -76,7 +76,7 @@ public:
         : rclcpp::Node("ur_receiver")
     {
         bool publish_tcp_pose = declare_parameter<bool>("publish_tcp_pose", true);
-        bool publish_tcp_twist = declare_parameter<bool>("publish_tcp_pose", true);
+        bool publish_tcp_twist = declare_parameter<bool>("publish_tcp_twist", true);
         auto hostname = declare_parameter<std::string>("hostname", "");
         auto prefix = declare_parameter<std::string>("prefix", "");
 
