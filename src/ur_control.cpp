@@ -186,19 +186,24 @@ public:
     {
         auto hostname = declare_parameter<std::string>("hostname", "");
         auto prefix = declare_parameter<std::string>("prefix", "");
-        auto servo_rate_hz = declare_parameter<double>("servo_rate_hz", DEFAULT_CONTROL_RATE_HZ);
+        auto servo_rate_hz = declare_parameter<double>("servo_rate_hz", 0);
         servo_j_lookahead_time_ = declare_parameter<double>("servo_j_lookahead_time", DEFAULT_SERVO_J_LOOKAHEAD_TIME);
         servo_j_gain_ = declare_parameter<double>("servo_j_gain", DEFAULT_SERVO_J_GAIN);
 
         base_frame_ = prefix + "base_link";
         rtde_ctrl_ = std::make_unique<ur_rtde::RTDEControlInterface>(hostname);
 
-        if (auto ur_step_time = rtde_ctrl_->getStepTime(); ur_step_time != 0) {
-            servo_rate_hz = 1.0 / ur_step_time;
+        if (servo_rate_hz == 0) {
+            if (auto ur_step_time = rtde_ctrl_->getStepTime(); ur_step_time != 0)
+                servo_rate_hz = 1.0 / ur_step_time;
+            else
+                servo_rate_hz = DEFAULT_CONTROL_RATE_HZ;
+
             set_parameter(rclcpp::Parameter("servo_rate_hz", servo_rate_hz));
         }
 
         rate_ = std::make_unique<rclcpp::WallRate>(servo_rate_hz);
+
         sub_servo_joint_ = create_subscription<sensor_msgs::msg::JointState>("servo_joint", 10,
             [this](const sensor_msgs::msg::JointState::UniquePtr m){ servo_joint(*m); });
         sub_move_joint_ = create_subscription<sensor_msgs::msg::JointState>("move_joint", 10,
