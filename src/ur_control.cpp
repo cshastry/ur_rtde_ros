@@ -284,7 +284,6 @@ public:
         }
 
         enqueue_command([this, q = m.position]() {
-            RCLCPP_INFO(get_logger(), "Moving!");
             state_ = State::MOVING;
 
             // blocks until robot is done moving
