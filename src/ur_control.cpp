@@ -121,7 +121,7 @@ public:
 private:
     void publish_state()
     {
-        auto now = get_clock()->now();
+        auto now = this->now();
 
         sensor_msgs::msg::JointState m_joint_state(rosidl_runtime_cpp::MessageInitialization::SKIP);
         m_joint_state.header.stamp = now;
@@ -441,11 +441,6 @@ private:
     std::mutex cmd_queue_mtx_;
     rclcpp::WallRate::UniquePtr rate_;
     std::list<rclcpp::SubscriptionBase::SharedPtr> subscribers_;
-    // rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr sub_servo_joint_;
-    // rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr sub_move_joint_;
-    // rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr sub_speed_joint_;
-    // rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr sub_move_linear_;
-    // rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_teach_mode_enable_;
     std::thread thread_;
     std::atomic<bool> cmd_loop_stopped_;
     double servo_j_lookahead_time_;
