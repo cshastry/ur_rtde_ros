@@ -115,7 +115,7 @@ public:
         if (publish_tcp_twist)
             pub_twist_ = create_publisher<geometry_msgs::msg::TwistStamped>("tcp_twist_current", rclcpp::SensorDataQoS());
 
-        timer_ = create_wall_timer(10ms, [this]() { return publish_state(); }); // Publish state at 100 Hz
+        timer_ = create_wall_timer(8ms, [this]() { return publish_state(); }); // FIXME hard-coded publish state at 125 Hz
     }
 
 private:
