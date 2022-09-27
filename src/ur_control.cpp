@@ -250,7 +250,7 @@ public:
     // Servo (i.e., small steps, no interpolation) to a target in joint space
     void servo_joint(const sensor_msgs::msg::JointState& m)
     {
-        if (state_ != State::READY || state_ != State::SERVOING) {
+        if (state_ != State::READY && state_ != State::SERVOING) {
             RCLCPP_WARN(get_logger(), "Discarding 'servo_joint' command - not ready!");
             return;
         }
@@ -278,7 +278,7 @@ public:
     // Move (with interpolation) to a target in joint space (MoveJ)
     void move_joint(const sensor_msgs::msg::JointState& m)
     {
-        if (state_ != State::READY || state_ != State::MOVING) {
+        if (state_ != State::READY && state_ != State::MOVING) {
             RCLCPP_WARN(get_logger(), "Discarding 'move_joint' command - not ready!");
             return;
         }
@@ -297,7 +297,7 @@ public:
    // Move (with linear interpolation) to target in tool space (MoveL)
     void move_linear(const geometry_msgs::msg::PoseStamped& m)
     {
-        if (state_ != State::READY || state_ != State::MOVING) {
+        if (state_ != State::READY && state_ != State::MOVING) {
             RCLCPP_WARN(get_logger(), "Discarding 'move_linear' command - not ready!");
             return;
         }
@@ -325,7 +325,7 @@ public:
     // Move at constant target velocity in joint space (linear acceleration profile)
     void speed_joint(const sensor_msgs::msg::JointState& m)
     {
-        if (state_ != State::READY || state_ != State::SPEEDING) {
+        if (state_ != State::READY && state_ != State::SPEEDING) {
             RCLCPP_WARN(get_logger(), "Discarding 'speed_joint' command - not ready!");
             return;
         }
@@ -343,7 +343,7 @@ public:
     // Move at constant target velocity in tool space (linear acceleration profile)
     void speed_linear(const geometry_msgs::msg::TwistStamped& m)
     {
-        if (state_ != State::READY || state_ != State::SPEEDING) {
+        if (state_ != State::READY && state_ != State::SPEEDING) {
             RCLCPP_WARN(get_logger(), "Discarding 'speed_joint' command - not ready!");
             return;
         }
