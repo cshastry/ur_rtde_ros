@@ -90,7 +90,7 @@ public:
 
         rtde_recv_ = std::make_unique<ur_rtde::RTDEReceiveInterface>(hostname, -1, vars);
 
-        base_frame_ = prefix + "base_link";
+        base_frame_ = prefix + "base"; // not base_link
         tool_frame_ = prefix + "ee_link";
 
         // Joint names corresponding to the names in the ur_description and
