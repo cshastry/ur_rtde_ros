@@ -190,7 +190,7 @@ public:
         servo_j_lookahead_time_ = declare_parameter<double>("servo_j_lookahead_time", DEFAULT_SERVO_J_LOOKAHEAD_TIME);
         servo_j_gain_ = declare_parameter<double>("servo_j_gain", DEFAULT_SERVO_J_GAIN);
 
-        base_frame_ = prefix + "base_link";
+        base_frame_ = prefix + "base"; // not base_link
         rtde_ctrl_ = std::make_unique<ur_rtde::RTDEControlInterface>(hostname);
 
         if (servo_rate_hz == 0) {
