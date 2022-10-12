@@ -149,12 +149,13 @@ private:
 //     control of the timing between calls.
 class Controller
 {
-    enum State
+    enum class State
     {
         IDLE,
         FREEDRIVE,
         MOVING,
         SERVOING,
+        SPEEDING,
     };
 
 public:
@@ -217,8 +218,8 @@ public:
 
     void moveJ(const sensor_msgs::JointState& m)
     {
-        if (state_ == SERVOING) {
-            ROS_WARN("Discarding MoveJ command - currently executing servo command");
+        if (state_ != State::IDLE && state_ != State::MOVING) {
+            ROS_WARN("Discarding MoveJ command - not ready");
             return;
         }
 
@@ -235,8 +236,8 @@ public:
 
     void servoJ(const sensor_msgs::JointState& m)
     {
-        if (state_ == MOVING) {
-            ROS_WARN("Discarding servoJ command - currently executing move command");
+        if (state_ != State::IDLE && state_ != State::SERVOING) {
+            ROS_WARN("Discarding servoJ command - not ready");
             return;
         }
 
@@ -262,8 +263,8 @@ public:
 
     void moveL(const geometry_msgs::PoseStamped& m)
     {
-        if (state_ == SERVOING) {
-            ROS_WARN("Discarding MoveL command - currently servoing");
+        if (state_ != State::IDLE && state_ != State::MOVING) {
+            ROS_WARN("Discarding MoveL command - not ready!");
             return;
         }
 
@@ -283,6 +284,48 @@ public:
                 ROS_WARN("MoveL command failed");
 
             state_ = IDLE;
+        });
+    }
+
+    // Move at constant target velocity in joint space (linear acceleration profile)
+    void speedJ(const sensor_msgs::msg::JointState& m)
+    {
+        if (state_ != State::IDLE && state_ != State::SPEEDING) {
+            ROS_WARN("Discarding speedJ command - not ready!");
+            return;
+        }
+
+        enqueue_command([this, qd = m.velocity]() {
+            if (state_ != State::SPEEDING) {
+                state_ = State::SPEEDING; // cleared if we don't keep receiving speed commands for some time
+            }
+
+            // ur_rtde servoJ is non-blocking
+            if (!rtde_ctrl_->speedJ(qd,  // desired joint velocities
+                                    0.5, // acceleration
+                                    0))  // blocking time for this function call
+                ROS_WARN("SpeedJ command failed");
+        });
+    }
+
+    // Move at constant target velocity in joint space (linear acceleration profile)
+    void speedL(const geometry_msgs::msg::TwistStamped& m)
+    {
+        if (state_ != State::IDLE && state_ != State::SPEEDING) {
+            ROS_WARN("Discarding speedL command - not ready!");
+            return;
+        }
+
+        enqueue_command([this, xd = convertTwist(m.twist)]() {
+            if (state_ != State::SPEEDING) {
+                state_ = State::SPEEDING; // cleared if we don't keep receiving speed commands for some time
+            }
+
+            // ur_rtde servoJ is non-blocking
+            if (!rtde_ctrl_->speedL(xd,   // desired joint velocities
+                                    0.25, // acceleration
+                                    0))   // blocking time for this function call
+                ROS_WARN("speedL command failed");
         });
     }
 
@@ -341,10 +384,17 @@ private:
             if (timeout) {
                 // Clear SERVOING state after timeout (ie. no new servo
                 // messages were received after a period of time)
-                if (state_ == SERVOING) {
-                    rtde_ctrl_.servoStop();
+                if (state_ == State::SERVOING) {
+                    rtde_ctrl_->servoStop();
                     cmd_queue_ = {}; // clear queue
-                    state_ = IDLE;
+                    state_ = State::IDLE;
+                }
+
+                // Clear SPEEDING state after timeout
+                if (state_ == State::SPEEDING) {
+                    rtde_ctrl_->speedStop();
+                    cmd_queue_ = {}; // clear queue
+                    state_ = State::IDLE;
                 }
             } else {
                 auto cmd = std::move(cmd_queue_.front());
@@ -354,8 +404,10 @@ private:
             }
         }
 
-        if (state_ == SERVOING)
-            rtde_ctrl_.servoStop();
+        if (state_ == State::SERVOING)
+            rtde_ctrl_->servoStop();
+        else if (state_ == State::SPEEDING)
+            rtde_ctrl_->speedStop();
 
         state_ = IDLE;
     }
@@ -421,6 +473,8 @@ int main(int argc, char* argv[])
         nh.subscribe("move_joint", 2, &Controller::moveJ, &controller, ros::TransportHints().tcp().tcpNoDelay()),
         nh.subscribe("move_tool_linear", 2, &Controller::moveL, &controller, ros::TransportHints().tcp().tcpNoDelay()),
         nh.subscribe("servo_joint", 1, &Controller::servoJ, &controller, ros::TransportHints().udp().tcp().tcpNoDelay()),
+        nh.subscribe("speed_joint", 1, &Controller::speedJ, &controller, ros::TransportHints().udp().tcp().tcpNoDelay()),
+        nh.subscribe("speed_linear", 1, &Controller::speedL, &controller, ros::TransportHints().udp().tcp().tcpNoDelay()),
         nh.subscribe("teach_mode_enable", 10, &Controller::setTeachModeEnabled, &controller, ros::TransportHints().tcp().tcpNoDelay()),
     };
 
