@@ -288,7 +288,7 @@ public:
     }
 
     // Move at constant target velocity in joint space (linear acceleration profile)
-    void speedJ(const sensor_msgs::msg::JointState& m)
+    void speedJ(const geometry_msgs::msg::TwistStamped& m)
     {
         if (state_ != State::IDLE && state_ != State::SPEEDING) {
             ROS_WARN("Discarding speedJ command - not ready!");
