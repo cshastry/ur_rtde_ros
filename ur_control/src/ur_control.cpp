@@ -126,7 +126,7 @@ class Receiver {
 //  2) the ServoX commands needs to be sent periodically, thus also requiring
 //     control of the timing between calls.
 class Controller {
-  enum State {
+  enum class State {
     IDLE,
     FREEDRIVE,
     MOVING,
@@ -138,11 +138,13 @@ class Controller {
                       const std::string& hostname)
       : rtde_ctrl_(hostname),
         base_frame_(prefix + base_frame),
-        state_(IDLE),
+        state_(State::IDLE),
         cmd_proc_stopped_(true),
         rate_(DEFAULT_CONTROL_RATE),
         servoj_lookahead_time_(DEFAULT_SERVOJ_LOOKAHEAD_TIME),
-        servoj_gain_(DEFAULT_SERVOJ_GAIN) {
+        servoj_gain_(DEFAULT_SERVOJ_GAIN),
+        servol_lookahead_time_(0.1),
+        servol_gain_(300.0) {
     if (ros::param::has("~servo_rate")) {
       setLoopRate(ros::param::param<double>("~servo_rate", getStepTime()));
     } else {
@@ -179,31 +181,32 @@ class Controller {
   double getStepTime() const { return secondsf(rate_.expected_cycle_time()).count(); }
 
   void moveJ(const sensor_msgs::JointState& m) {
-    if (state_ == SERVOING) {
+    if (state_ == State::SERVOING) {
       ROS_WARN("Discarding MoveJ command - currently executing servo command");
       return;
     }
 
     enqueueCommand([this, q = m.position]() {
-      state_ = MOVING;
+      state_ = State::MOVING;
 
       // blocks until robot is done moving
       if (!rtde_ctrl_.moveJ(q, 1.05, 1.4)) ROS_WARN("MoveJ command failed");
 
-      state_ = IDLE;
+      state_ = State::IDLE;
     });
   }
 
   void servoJ(const sensor_msgs::JointState& m) {
-    if (state_ == MOVING) {
+    if (state_ == State::MOVING) {
       ROS_WARN("Discarding servoJ command - currently executing move command");
       return;
     }
 
     enqueueCommand([this, q = m.position]() {
-      if (state_ != SERVOING) {
+      if (state_ != State::SERVOING) {
         rate_.reset();
-        state_ = SERVOING;  // cleared if we don't keep receiving servo commands for some time
+        state_ =
+            State::SERVOING;  // cleared if we don't keep receiving servo commands for some time
       }
 
       // ur_rtde servoJ is non-blocking
@@ -223,7 +226,7 @@ class Controller {
   }
 
   void moveL(const geometry_msgs::PoseStamped& m) {
-    if (state_ == SERVOING) {
+    if (state_ == State::SERVOING) {
       ROS_WARN("Discarding MoveL command - currently servoing");
       return;
     }
@@ -237,12 +240,42 @@ class Controller {
     }
 
     enqueueCommand([this, pose = convertPose(m.pose)]() {
-      state_ = MOVING;
+      state_ = State::MOVING;
 
       // blocks until robot is done moving
       if (!rtde_ctrl_.moveL(pose, 0.25, 1.2)) ROS_WARN("MoveL command failed");
 
-      state_ = IDLE;
+      state_ = State::IDLE;
+    });
+  }
+
+  void servoL(const geometry_msgs::PoseStamped& m) {
+    if (state_ == State::MOVING) {
+      ROS_WARN("Discarding servoL command - currently executing move command");
+      return;
+    }
+
+    if (m.header.frame_id != base_frame_) {
+      ROS_WARN_STREAM("Discarding servoL command with target frame " << "'" << m.header.frame_id
+                                                                     << "'"
+                                                                     << "(expected "
+                                                                     << "'" << base_frame_ << "')");
+      return;
+    }
+
+    enqueueCommand([this, pose = convertPose(m.pose)]() {
+      if (state_ != State::SERVOING) {
+        rate_.reset();
+        state_ = State::SERVOING;
+      }
+
+      if (!rtde_ctrl_.servoL(pose, 0, 0, getStepTime(), servol_lookahead_time_, servol_gain_))
+        ROS_WARN("ServoL command failed");
+
+      if (!rate_.sleep())
+        ROS_WARN_THROTTLE(0.5, "ServoL cycle time overstepped (expected: %.2f ms, actual: %.2f ms)",
+                          millisecondsf(rate_.expected_cycle_time()).count(),
+                          millisecondsf(rate_.actual_cycle_time()).count());
     });
   }
 
@@ -259,12 +292,12 @@ class Controller {
   }
 
   void setTeachModeEnabled(const std_msgs::Bool& msg) {
-    if (msg.data && state_ == IDLE) {
+    if (msg.data && state_ == State::IDLE) {
       rtde_ctrl_.teachMode();
-      state_ = FREEDRIVE;
-    } else if (!msg.data && state_ == FREEDRIVE) {
+      state_ = State::FREEDRIVE;
+    } else if (!msg.data && state_ == State::FREEDRIVE) {
       rtde_ctrl_.endTeachMode();
-      state_ = IDLE;
+      state_ = State::IDLE;
     }
   }
 
@@ -296,10 +329,10 @@ class Controller {
       if (timeout) {
         // Clear SERVOING state after timeout (ie. no new servo
         // messages were received after a period of time)
-        if (state_ == SERVOING) {
+        if (state_ == State::SERVOING) {
           rtde_ctrl_.servoStop();
           cmd_queue_ = {};  // clear queue
-          state_ = IDLE;
+          state_ = State::IDLE;
         }
       } else {
         auto cmd = std::move(cmd_queue_.front());
@@ -309,9 +342,9 @@ class Controller {
       }
     }
 
-    if (state_ == SERVOING) rtde_ctrl_.servoStop();
+    if (state_ == State::SERVOING) rtde_ctrl_.servoStop();
 
-    state_ = IDLE;
+    state_ = State::IDLE;
   }
 
  private:
@@ -326,6 +359,8 @@ class Controller {
   monotonic_rate rate_;
   double servoj_lookahead_time_;
   double servoj_gain_;
+  double servol_lookahead_time_;
+  double servol_gain_;
 };
 
 int main(int argc, char* argv[]) {
@@ -381,6 +416,8 @@ int main(int argc, char* argv[]) {
                    ros::TransportHints().udp().tcp().tcpNoDelay()),
       nh.subscribe("teach_mode_enable", 10, &Controller::setTeachModeEnabled, &controller,
                    ros::TransportHints().tcp().tcpNoDelay()),
+      nh.subscribe("servo_tool_linear", 1, &Controller::servoL, &controller,
+                   ros::TransportHints().udp().tcp().tcpNoDelay()),
   };
 
   // Schedule timer to publish robot state
