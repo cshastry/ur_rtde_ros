@@ -1,0 +1,2 @@
+ur_control/hostname: "UR-Robot"
+ur_control/publish_tcp_pose: true

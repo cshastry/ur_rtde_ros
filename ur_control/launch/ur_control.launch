@@ -1,0 +1,5 @@
+<launch>
+    <node name="ur_control"  pkg="ur_control" type="ur_control" output="screen" />
+
+    <rosparam file="$(dirname)/../cfg/params.yaml"/>
+</launch>

@@ -18,7 +18,7 @@
 
 #include "monotonic.h"
 
-#define DEFAULT_CONTROL_RATE 125.0
+#define DEFAULT_CONTROL_RATE 500
 #define DEFAULT_SERVOJ_LOOKAHEAD_TIME 0.1
 #define DEFAULT_SERVOJ_GAIN 300.0
 
