@@ -243,7 +243,7 @@ class Controller {
       state_ = State::MOVING;
 
       // blocks until robot is done moving
-      if (!rtde_ctrl_.moveL(pose, 0.25, 1.2)) ROS_WARN("MoveL command failed");
+      if (!rtde_ctrl_.moveL(pose, 0.1, 1)) ROS_WARN("MoveL command failed");
 
       state_ = State::IDLE;
     });
